@@ -1,8 +1,10 @@
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../data/entry.dart';
+import '../data/vault_repository.dart';
 import '../state/vault_controller.dart';
 import '../theme.dart';
 import '../widgets/entry_card.dart';
@@ -105,6 +107,36 @@ class _VaultScreenState extends State<VaultScreen> {
     );
   }
 
+  /// Backs the vault up to a location the user picks.
+  ///
+  /// The save panel prompts about replacing an existing file itself, so a path
+  /// that already exists here means the user said yes — which is the only case
+  /// allowed to overwrite one.
+  Future<void> _backup() async {
+    final location = await getSaveLocation(
+      suggestedName: VaultRepository.suggestedBackupName(DateTime.now()),
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'Vault database', extensions: ['db']),
+      ],
+    );
+
+    if (location == null) return;
+
+    await widget.controller.backupTo(location.path, replace: true);
+    if (!mounted) return;
+
+    // An error already surfaced through the controller's banner.
+    if (widget.controller.error != null) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Backed up to ${location.path}'),
+        backgroundColor: VaultTheme.inkRaised,
+        duration: const Duration(milliseconds: 3600),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
@@ -180,6 +212,10 @@ class _VaultScreenState extends State<VaultScreen> {
             OutlinedButton(
               onPressed: widget.controller.refresh,
               child: const Text('Reload'),
+            ),
+            OutlinedButton(
+              onPressed: widget.controller.busy ? null : _backup,
+              child: const Text('Backup'),
             ),
             OutlinedButton(
               onPressed: () => showDialog(

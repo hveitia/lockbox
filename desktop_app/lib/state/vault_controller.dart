@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -184,6 +186,20 @@ class VaultController extends ChangeNotifier {
 
   Future<void> toggleFavorite(Entry entry) =>
       _guard(() async => _repo!.setFavorite(_key!, entry.id, !entry.favorite));
+
+  /// Backs the vault up to [destinationPath], replacing it if [replace] is set.
+  ///
+  /// SQLite refuses to write over an existing file. [replace] is how the save
+  /// dialog's own "a file named X already exists — replace it?" answer reaches
+  /// down here: the user has already consented at that point, so the file is
+  /// removed first. Nothing else should pass it.
+  Future<void> backupTo(String destinationPath, {bool replace = false}) =>
+      _guard(() async {
+        final existing = File(destinationPath);
+        if (replace && existing.existsSync()) existing.deleteSync();
+
+        _repo!.backupTo(destinationPath);
+      });
 
   Future<void> changeMasterPassword(String next, String confirmation) async {
     if (next != confirmation) {

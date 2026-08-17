@@ -59,6 +59,22 @@ desktop app is not a viewer — it is a second full client:
 
 Rows written before `url`, `favorite`, or `color` existed still read correctly.
 
+## Backups
+
+**Backup** opens a save panel and writes one self-contained file wherever you
+point it. Copy that file anywhere — it needs no companion files.
+
+**Do not copy the vault file yourself.** The vault runs in SQLite's WAL mode, so
+writes land in a `.db-wal` alongside it and stay there until SQLite folds them
+back in, which it does at 1000 pages or on a clean close — and a personal vault
+reaches neither. A copy of the `.db` on its own is usually a stub with no tables
+in it, and it fails silently: nothing complains until you try to restore it.
+
+The web app writes its backups into `data/backups/` because a server has no file
+picker. Here you choose the location, which is the better answer — a backup
+sitting next to the original does not survive losing the disk. Both clients name
+the file identically, and `vault_repository_test.dart` asserts that they agree.
+
 ## Tests
 
 ```bash

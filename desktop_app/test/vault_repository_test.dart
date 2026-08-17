@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -10,6 +11,16 @@ const String interopDbPath = 'test/fixtures/interop_vault.db';
 
 VaultRepository freshRepository() =>
     VaultRepository(sqlite3.openInMemory());
+
+const String master = 'a-strong-master-password';
+
+EntryInput entryInput({String app = 'App', String password = 'p'}) => EntryInput(
+  app: app,
+  username: 'u',
+  url: '',
+  password: password,
+  comment: '',
+);
 
 void main() {
   group('a vault built by the Node implementation', () {
@@ -377,6 +388,123 @@ void main() {
     test('reads an unknown stored value as the default', () {
       expect(readColor('chartreuse'), defaultColor);
       expect(readColor(null), defaultColor);
+    });
+  });
+
+  group('backup', () {
+    late Directory workspace;
+    late String sourcePath;
+    late VaultRepository repo;
+    late Uint8List key;
+
+    setUp(() {
+      workspace = Directory.systemTemp.createTempSync('vault-backup-');
+      // A file on disk, not in memory: the whole question is what lands there.
+      // migrate() turns on WAL, so writes go to vault.db-wal and stay put —
+      // SQLite only folds them back at 1000 pages or on a clean close, and a
+      // personal vault reaches neither.
+      sourcePath = '${workspace.path}/vault.db';
+      repo = VaultRepository.open(sourcePath);
+      repo.initialize(master);
+      key = repo.unlock(master)!;
+      repo.createEntry(key, entryInput(app: 'First', password: 'one'));
+      repo.createEntry(key, entryInput(app: 'Second', password: 'two'));
+    });
+
+    tearDown(() {
+      repo.dispose();
+      workspace.deleteSync(recursive: true);
+    });
+
+    test('writes a file that stands alone without the write-ahead log', () {
+      final destination = '${workspace.path}/backup.db';
+
+      repo.backupTo(destination);
+
+      expect(File(destination).existsSync(), isTrue);
+      expect(File('$destination-wal').existsSync(), isFalse);
+
+      final restored = VaultRepository.open(destination);
+      addTearDown(restored.dispose);
+
+      final restoredKey = restored.unlock(master);
+      expect(restoredKey, isNotNull, reason: 'the backup should still unlock');
+      expect(
+        restored.listEntries(restoredKey!).map((e) => e.app).toList()..sort(),
+        ['First', 'Second'],
+      );
+    });
+
+    /// The reason this exists. Copying vault.db is what the README used to
+    /// tell people to do, and on a live vault it captures a stub.
+    test('captures rows a bare copy of the database file would miss', () {
+      final bareCopy = '${workspace.path}/bare-copy.db';
+      File(sourcePath).copySync(bareCopy);
+
+      final copied = sqlite3.open(bareCopy);
+      final tables = copied.select(
+        "SELECT count(*) AS n FROM sqlite_master WHERE type = 'table'",
+      );
+      copied.close();
+
+      expect(
+        tables.first['n'],
+        0,
+        reason: 'a bare file copy should capture nothing',
+      );
+
+      final destination = '${workspace.path}/captures-everything.db';
+      repo.backupTo(destination);
+
+      final restored = VaultRepository.open(destination);
+      addTearDown(restored.dispose);
+      expect(restored.listEntries(restored.unlock(master)!).length, 2);
+    });
+
+    test('refuses to overwrite an existing file rather than truncate it', () {
+      final destination = '${workspace.path}/occupied.db';
+
+      repo.backupTo(destination);
+
+      expect(() => repo.backupTo(destination), throwsA(isA<SqliteException>()));
+    });
+
+    test('leaves the source vault usable', () {
+      repo.backupTo('${workspace.path}/after.db');
+
+      expect(repo.listEntries(key).length, 2);
+      repo.createEntry(key, entryInput(app: 'Third'));
+      expect(repo.listEntries(key).length, 3);
+    });
+
+    group('suggestedBackupName', () {
+      test('names the file after the moment it was taken', () {
+        expect(
+          VaultRepository.suggestedBackupName(
+            DateTime.utc(2026, 8, 17, 17, 40, 5, 123),
+          ),
+          'vault-2026-08-17T17-40-05-123.db',
+        );
+      });
+
+      /// Finder renders a colon in a filename as a slash, and FAT32 rejects it.
+      test('keeps the name free of characters filesystems object to', () {
+        expect(
+          VaultRepository.suggestedBackupName(DateTime.now()),
+          matches(r'^[A-Za-z0-9.\-]+$'),
+        );
+      });
+
+      test('matches the name the web app writes', () {
+        // src/lib/vault.ts builds this from toISOString(); the two clients
+        // must not disagree about what a backup is called.
+        expect(
+          VaultRepository.suggestedBackupName(
+            DateTime.utc(2026, 1, 2, 3, 4, 5, 6),
+          ),
+          'vault-2026-01-02T03-04-05-006.db',
+        );
+      });
     });
   });
 }

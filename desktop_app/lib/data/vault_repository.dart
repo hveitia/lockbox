@@ -245,6 +245,45 @@ class VaultRepository {
     }
   }
 
+  /// Writes a self-contained copy of the vault to [destinationPath].
+  ///
+  /// Copying the vault file with the filesystem does not work, and fails
+  /// silently: the vault runs in WAL mode, SQLite only folds the write-ahead
+  /// log back into the main file at 1000 pages or on a clean close, and a
+  /// personal vault hits neither — so the file on disk is a stub whose tables
+  /// have not been written yet. `VACUUM INTO` builds one consistent file from
+  /// the database plus its log without pausing writers.
+  ///
+  /// Throws if [destinationPath] already exists; SQLite will not clobber it.
+  /// Callers that have the user's consent to replace a file must delete it
+  /// first — see the save-dialog flow in the vault screen.
+  void backupTo(String destinationPath) {
+    final statement = _db.prepare('VACUUM INTO ?');
+    try {
+      statement.execute([destinationPath]);
+    } finally {
+      statement.close();
+    }
+  }
+
+  /// Default filename offered by the save dialog.
+  ///
+  /// Deliberately identical to the name `createBackup` writes in
+  /// `src/lib/vault.ts`: both clients back up the same vault, and they must
+  /// not disagree about what a backup is called. Colons are legal on macOS but
+  /// Finder renders them as slashes and FAT32 rejects them, so the timestamp
+  /// carries dashes only. Milliseconds stay in because [backupTo] refuses to
+  /// overwrite.
+  static String suggestedBackupName(DateTime now) {
+    final stamp = now
+        .toUtc()
+        .toIso8601String()
+        .replaceAll(RegExp(r'[:.]'), '-')
+        .replaceAll(RegExp(r'Z$'), '');
+
+    return 'vault-$stamp.db';
+  }
+
   void deleteEntry(int id) {
     _db.execute('DELETE FROM entries WHERE id = ?', [id]);
 
