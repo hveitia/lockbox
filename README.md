@@ -34,7 +34,7 @@ the database is a single SQLite file under `data/`.
 
 ## Starting the app
 
-Everything runs from this directory: `/Users/hector/Documents/Work/vault`
+Every command below runs from the repository root.
 
 ### First time
 
@@ -118,8 +118,29 @@ Changing it (via **Master password**) re-encrypts every entry under the new key.
 
 ## Backups
 
-Copy `data/vault.db` wherever you like — it is encrypted at rest, so a backup on a
-sync service is still unreadable without the master password. `data/` is gitignored.
+Press **Backup**. It writes one self-contained file into `data/backups/` and shows
+you the path. Copy *that* file wherever you like — it is encrypted at rest, so a
+backup on a sync service is still unreadable without the master password.
+
+From a terminal, the same thing:
+
+```bash
+sqlite3 data/vault.db "VACUUM INTO 'vault-backup.db'"
+```
+
+**Do not copy `data/vault.db` yourself.** The vault runs in SQLite's WAL mode, so
+writes land in `data/vault.db-wal` and stay there until SQLite folds them back into
+the main file — which it does at 1000 pages or on a clean shutdown, and a personal
+vault reaches neither. A copy of `vault.db` on its own is usually a stub with no
+tables in it at all. Worse, it fails *silently*: nothing complains until the day you
+try to restore it.
+
+For the same reason, do not point a sync client at `data/` itself. Copying
+`vault.db` and `vault.db-wal` at different moments, or writing them back underneath
+a running app, can corrupt the live vault. Sync the backup file, not the directory
+the app is using.
+
+`data/` is gitignored, backups included.
 
 ## Desktop app
 
@@ -148,7 +169,7 @@ pnpm typecheck
 | --- | --- |
 | `src/lib/entry.ts` | Shared entry shape, color list, URL normalization |
 | `src/lib/crypto.ts` | Key derivation and AES-256-GCM encrypt/decrypt |
-| `src/lib/vault.ts` | Schema, unlock, entry CRUD, master password rotation |
+| `src/lib/vault.ts` | Schema, unlock, entry CRUD, master password rotation, backup |
 | `src/lib/session-store.ts` | In-memory unlocked keys with sliding expiry |
 | `src/lib/server.ts` | Database and session singletons, cookie handling |
 | `src/app/actions.ts` | Server actions |

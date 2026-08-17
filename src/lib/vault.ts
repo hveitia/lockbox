@@ -1,3 +1,5 @@
+import { mkdirSync } from "node:fs";
+import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 
 import {
@@ -264,6 +266,46 @@ export function deleteEntry(db: DatabaseSync, id: number): void {
   if (changes === 0) {
     throw new Error(`No entry with id ${id}`);
   }
+}
+
+/**
+ * Writes a self-contained copy of the vault to `destinationPath`.
+ *
+ * Copying `vault.db` with the filesystem does not work, and fails silently:
+ * the vault runs in WAL mode, SQLite only folds the write-ahead log back into
+ * the main file at 1000 pages or on a clean close, and a personal vault hits
+ * neither — so the file sitting on disk is a stub whose tables have not been
+ * written yet. `VACUUM INTO` builds a consistent single file from the database
+ * plus its log, without pausing writers, and refuses to clobber an existing
+ * path. The result needs no sidecar files and can be copied anywhere.
+ */
+export function backupVault(db: DatabaseSync, destinationPath: string): void {
+  db.prepare("VACUUM INTO ?").run(destinationPath);
+}
+
+/**
+ * Backs the vault up into `directory` under a timestamped name, creating the
+ * directory if needed, and returns the path written.
+ *
+ * `now` is injectable so the name is testable; nothing else should pass it.
+ */
+export function createBackup(
+  db: DatabaseSync,
+  directory: string,
+  now: Date = new Date(),
+): string {
+  mkdirSync(directory, { recursive: true });
+
+  // Colons are legal on macOS and Linux but not on every filesystem a backup
+  // may be copied to, and Finder renders them as slashes. Milliseconds stay
+  // in: backupVault refuses to overwrite, so two backups in the same second
+  // must not collide.
+  const stamp = now.toISOString().replace(/[:.]/g, "-").replace(/Z$/, "");
+  const destination = path.join(directory, `vault-${stamp}.db`);
+
+  backupVault(db, destination);
+
+  return destination;
 }
 
 /**

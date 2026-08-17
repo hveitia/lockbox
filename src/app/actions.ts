@@ -19,8 +19,9 @@ import {
   openSession,
   requireSessionKey,
   setSessionCookie,
+  writeBackup,
 } from "@/lib/server.ts";
-import { failed, OK, type ActionState } from "./action-state.ts";
+import { failed, OK, succeeded, type ActionState } from "./action-state.ts";
 
 /** Flattens an input for the error state, which round-trips as strings. */
 function toFormValues(input: EntryInput): Record<string, string> {
@@ -87,6 +88,20 @@ export async function unlockAction(
 export async function lockAction(): Promise<void> {
   await closeSession();
   revalidatePath("/");
+}
+
+/**
+ * Nothing on screen changes, so this does not revalidate. It requires an
+ * unlocked vault only so a locked browser cannot make the server write files.
+ */
+export async function backupAction(_prev: ActionState): Promise<ActionState> {
+  try {
+    await requireSessionKey();
+
+    return succeeded(writeBackup());
+  } catch (error) {
+    return failed(error);
+  }
 }
 
 export async function createEntryAction(

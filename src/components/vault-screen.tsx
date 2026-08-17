@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useActionState, useMemo, useState } from "react";
 
-import { lockAction } from "@/app/actions.ts";
+import { backupAction, lockAction } from "@/app/actions.ts";
+import { IDLE } from "@/app/action-state.ts";
 import { DEFAULT_COLOR, ENTRY_COLORS, type Entry, type EntryColor } from "@/lib/entry.ts";
 import { EntryDialog } from "./entry-dialog.tsx";
 import { EntryRow } from "./entry-row.tsx";
@@ -23,6 +24,7 @@ export function VaultScreen({ entries }: { entries: Entry[] }) {
   const [color, setColor] = useState<ColorFilter>("any");
   const [editing, setEditing] = useState<Entry | "new" | null>(null);
   const [changingMaster, setChangingMaster] = useState(false);
+  const [backup, runBackup, backingUp] = useActionState(backupAction, IDLE);
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -63,6 +65,11 @@ export function VaultScreen({ entries }: { entries: Entry[] }) {
         </div>
 
         <div className="flex items-center gap-2">
+          <form action={runBackup}>
+            <button type="submit" className="btn-quiet" disabled={backingUp}>
+              {backingUp ? "Backing up…" : "Backup"}
+            </button>
+          </form>
           <button
             type="button"
             className="btn-quiet"
@@ -77,6 +84,25 @@ export function VaultScreen({ entries }: { entries: Entry[] }) {
           </form>
         </div>
       </header>
+
+      {backup.status !== "idle" && (
+        <p
+          role="status"
+          className={`mt-4 text-sm ${
+            backup.status === "error" ? "text-red-400" : "text-brass-dim"
+          }`}
+        >
+          {backup.status === "error" ? (
+            backup.message
+          ) : (
+            <>
+              Backup written to{" "}
+              <code className="break-all text-parchment">{backup.detail}</code>.
+              Copy that single file anywhere — it needs nothing beside it.
+            </>
+          )}
+        </p>
+      )}
 
       <div className="mt-5 h-px w-full bg-brass/40" />
 

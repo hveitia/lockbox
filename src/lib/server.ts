@@ -5,7 +5,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { cookies } from "next/headers";
 
-import { migrate, unlock as unlockVault } from "./vault.ts";
+import { createBackup, migrate, unlock as unlockVault } from "./vault.ts";
 import { createSessionStore, type SessionStore } from "./session-store.ts";
 
 export const SESSION_COOKIE = "vault_session";
@@ -33,6 +33,18 @@ export function getDatabase(): DatabaseSync {
   }
 
   return globalRef.__vaultDb;
+}
+
+/**
+ * Writes a timestamped backup beside the vault and returns its path.
+ *
+ * It lands next to the database rather than somewhere of the user's choosing
+ * because the server has no file picker — the point is to produce one
+ * self-contained file that is safe to copy anywhere, which a copy of
+ * `vault.db` is not. Backups are inside `data/`, so they are gitignored too.
+ */
+export function writeBackup(): string {
+  return createBackup(getDatabase(), path.join(path.dirname(DB_PATH), "backups"));
 }
 
 export function getSessions(): SessionStore {

@@ -1,6 +1,9 @@
-import { test, describe, beforeEach } from "node:test";
+import { test, describe, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import { mkdtempSync, rmSync, existsSync, copyFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import {
   migrate,
@@ -13,6 +16,8 @@ import {
   deleteEntry,
   setFavorite,
   changeMasterPassword,
+  backupVault,
+  createBackup,
 } from "./vault.ts";
 import type { EntryInput } from "./entry.ts";
 
@@ -459,5 +464,158 @@ describe("changeMasterPassword", () => {
     const stillWorks = unlock(db, MASTER);
     assert.ok(stillWorks);
     assert.equal(listEntries(db, stillWorks)[0].password, "s3cret");
+  });
+});
+
+describe("backupVault", () => {
+  const workspace = mkdtempSync(path.join(tmpdir(), "vault-backup-"));
+  after(() => rmSync(workspace, { recursive: true, force: true }));
+
+  let source: DatabaseSync;
+  let sourcePath: string;
+  let key: Buffer;
+  let run = 0;
+
+  beforeEach(() => {
+    // A file-backed database, not :memory: — the whole point is what lands on
+    // disk. migrate() puts it in WAL mode, so writes go to vault.db-wal and
+    // stay there: SQLite only checkpoints at 1000 pages or on a clean close,
+    // and a personal vault reaches neither.
+    sourcePath = path.join(workspace, `source-${run++}.db`);
+    source = new DatabaseSync(sourcePath);
+    migrate(source);
+    initializeVault(source, MASTER);
+    key = unlock(source, MASTER)!;
+
+    createEntry(source, key, input({ app: "First", password: "one" }));
+    createEntry(source, key, input({ app: "Second", password: "two" }));
+  });
+
+  /** Opens a path with no sidecar files beside it, the way a restore would. */
+  function readBackAlone(from: string): DatabaseSync {
+    const isolated = path.join(workspace, `restored-${run++}.db`);
+    // Copying through SQLite rather than the filesystem proves the backup
+    // needs no -wal companion: if it did, this restore would come up empty.
+    const reader = new DatabaseSync(from);
+    reader.exec(`VACUUM INTO '${isolated}'`);
+    reader.close();
+
+    return new DatabaseSync(isolated);
+  }
+
+  test("writes a file that stands alone without the write-ahead log", () => {
+    const destination = path.join(workspace, "backup.db");
+
+    backupVault(source, destination);
+
+    assert.equal(existsSync(destination), true);
+    assert.equal(existsSync(`${destination}-wal`), false);
+
+    const restored = readBackAlone(destination);
+    const restoredKey = unlock(restored, MASTER);
+
+    assert.ok(restoredKey, "the backup should unlock with the same password");
+    assert.deepEqual(
+      listEntries(restored, restoredKey).map((entry) => entry.app).sort(),
+      ["First", "Second"],
+    );
+    restored.close();
+  });
+
+  /**
+   * The regression this function exists for. `cp data/vault.db backup.db` was
+   * the documented backup procedure, and on a live vault it copies a stub:
+   * every table still lives in the uncheckpointed write-ahead log.
+   */
+  test("captures rows a bare copy of the database file would miss", () => {
+    // What the README used to tell people to do: copy vault.db and nothing
+    // else. Establish first that it really does lose the vault, so this test
+    // keeps failing if the WAL behaviour that motivated backupVault changes.
+    const bareCopy = path.join(workspace, "bare-copy.db");
+    copyFileSync(sourcePath, bareCopy);
+
+    const copied = new DatabaseSync(bareCopy);
+    const tables = copied
+      .prepare("SELECT count(*) AS n FROM sqlite_master WHERE type = 'table'")
+      .get() as { n: number };
+    copied.close();
+
+    assert.equal(tables.n, 0, "a bare file copy should capture nothing");
+
+    // The same moment in time, taken properly.
+    const destination = path.join(workspace, "captures-everything.db");
+    backupVault(source, destination);
+
+    const restored = readBackAlone(destination);
+    assert.equal(listEntries(restored, unlock(restored, MASTER)!).length, 2);
+    restored.close();
+  });
+
+  test("refuses to overwrite an existing file rather than truncate it", () => {
+    const destination = path.join(workspace, "occupied.db");
+
+    backupVault(source, destination);
+
+    assert.throws(() => backupVault(source, destination));
+  });
+
+  test("leaves the source vault usable", () => {
+    backupVault(source, path.join(workspace, "after.db"));
+
+    assert.equal(listEntries(source, key).length, 2);
+    createEntry(source, key, input({ app: "Third" }));
+    assert.equal(listEntries(source, key).length, 3);
+  });
+
+  describe("createBackup", () => {
+    test("creates the directory when it does not exist yet", () => {
+      const directory = path.join(workspace, "never-created", "backups");
+
+      const written = createBackup(source, directory);
+
+      assert.equal(existsSync(written), true);
+      assert.equal(path.dirname(written), directory);
+    });
+
+    test("names the file after the moment it was taken", () => {
+      const directory = path.join(workspace, "named");
+
+      const written = createBackup(
+        source,
+        directory,
+        new Date("2026-08-17T17:40:05.123Z"),
+      );
+
+      assert.equal(path.basename(written), "vault-2026-08-17T17-40-05-123.db");
+    });
+
+    /** Finder renders a colon in a filename as a slash, and FAT32 rejects it. */
+    test("keeps the name free of characters filesystems object to", () => {
+      const written = createBackup(source, path.join(workspace, "portable"));
+
+      assert.match(path.basename(written), /^[A-Za-z0-9.\-]+$/);
+    });
+
+    test("two backups a millisecond apart do not collide", () => {
+      const directory = path.join(workspace, "rapid");
+
+      const first = createBackup(source, directory, new Date("2026-08-17T17:40:05.123Z"));
+      const second = createBackup(source, directory, new Date("2026-08-17T17:40:05.124Z"));
+
+      assert.notEqual(first, second);
+      assert.equal(existsSync(first), true);
+      assert.equal(existsSync(second), true);
+    });
+
+    test("produces a restorable vault, not just a file", () => {
+      const written = createBackup(source, path.join(workspace, "restorable"));
+
+      const restored = readBackAlone(written);
+      const restoredKey = unlock(restored, MASTER);
+
+      assert.ok(restoredKey);
+      assert.equal(listEntries(restored, restoredKey).length, 2);
+      restored.close();
+    });
   });
 });

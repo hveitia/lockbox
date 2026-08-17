@@ -5,12 +5,17 @@
  */
 export type ActionState =
   | { status: "idle" }
-  | { status: "ok" }
+  /** `detail` carries a result the UI should show, such as a written file path. */
+  | { status: "ok"; detail?: string }
   /** `values` carries the rejected submission back so the form can refill itself. */
   | { status: "error"; message: string; values?: Record<string, string> };
 
 export const IDLE: ActionState = { status: "idle" };
 export const OK: ActionState = { status: "ok" };
+
+export function succeeded(detail: string): ActionState {
+  return { status: "ok", detail };
+}
 
 export function failed(
   error: unknown,
