@@ -157,6 +157,25 @@ the app is using.
 
 `data/` is gitignored, backups included.
 
+## Restoring
+
+Press **Restore**, pick a backup, confirm. The vault's contents are replaced and
+the vault locks.
+
+It locks because the backup brings its own salt and verifier with it: after a
+restore the master password is whatever it was when that backup was taken, which
+is not necessarily the one you just used.
+
+**Do not restore by copying a file over `data/vault.db`.** It looks like it
+works and it does not. Any process still holding the vault open — this app, the
+desktop client — writes its own write-ahead log over the file afterwards, and
+the rows you meant to discard come back with no error shown at all. Restore is
+done inside SQLite in a single transaction precisely so that cannot happen: it
+either completes or leaves the vault exactly as it was.
+
+A backup that is not a vault, or not a database, is rejected before anything is
+deleted rather than halfway through.
+
 ## Desktop app
 
 `desktop_app/` is a native macOS client for this same vault, written in Flutter.

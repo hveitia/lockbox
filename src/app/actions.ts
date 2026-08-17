@@ -18,6 +18,7 @@ import {
   getSessions,
   openSession,
   requireSessionKey,
+  restoreBackup,
   setSessionCookie,
   writeBackup,
 } from "@/lib/server.ts";
@@ -102,6 +103,30 @@ export async function backupAction(_prev: ActionState): Promise<ActionState> {
   } catch (error) {
     return failed(error);
   }
+}
+
+/**
+ * Restores a backup, which drops every session including this one.
+ *
+ * The cookie is cleared so the browser lands on the unlock screen rather than
+ * on a vault whose key no longer decrypts anything: the backup brings its own
+ * salt and verifier, so the master password is now whatever it was when the
+ * backup was taken.
+ */
+export async function restoreAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  try {
+    await requireSessionKey();
+    restoreBackup(String(formData.get("name") ?? ""));
+    await closeSession();
+  } catch (error) {
+    return failed(error);
+  }
+
+  revalidatePath("/");
+  return OK;
 }
 
 export async function createEntryAction(

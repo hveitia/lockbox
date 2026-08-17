@@ -8,6 +8,7 @@ import { DEFAULT_COLOR, ENTRY_COLORS, type Entry, type EntryColor } from "@/lib/
 import { EntryDialog } from "./entry-dialog.tsx";
 import { EntryRow } from "./entry-row.tsx";
 import { MasterPasswordDialog } from "./master-password-dialog.tsx";
+import { RestoreDialog } from "./restore-dialog.tsx";
 
 type ColorFilter = EntryColor | "any";
 
@@ -18,12 +19,19 @@ function matches(entry: Entry, query: string): boolean {
   return haystack.includes(query);
 }
 
-export function VaultScreen({ entries }: { entries: Entry[] }) {
+export function VaultScreen({
+  entries,
+  backups,
+}: {
+  entries: Entry[];
+  backups: string[];
+}) {
   const [query, setQuery] = useState("");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [color, setColor] = useState<ColorFilter>("any");
   const [editing, setEditing] = useState<Entry | "new" | null>(null);
   const [changingMaster, setChangingMaster] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [backup, runBackup, backingUp] = useActionState(backupAction, IDLE);
 
   const visible = useMemo(() => {
@@ -70,6 +78,13 @@ export function VaultScreen({ entries }: { entries: Entry[] }) {
               {backingUp ? "Backing up…" : "Backup"}
             </button>
           </form>
+          <button
+            type="button"
+            className="btn-quiet"
+            onClick={() => setRestoring(true)}
+          >
+            Restore
+          </button>
           <button
             type="button"
             className="btn-quiet"
@@ -198,6 +213,10 @@ export function VaultScreen({ entries }: { entries: Entry[] }) {
 
       {changingMaster && (
         <MasterPasswordDialog onClose={() => setChangingMaster(false)} />
+      )}
+
+      {restoring && (
+        <RestoreDialog backups={backups} onClose={() => setRestoring(false)} />
       )}
     </main>
   );

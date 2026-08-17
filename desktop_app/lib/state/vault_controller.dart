@@ -201,6 +201,17 @@ class VaultController extends ChangeNotifier {
         _repo!.backupTo(destinationPath);
       });
 
+  /// Replaces the vault's contents with a backup, then locks.
+  ///
+  /// Locking is not a courtesy. The backup brings its own salt and verifier, so
+  /// the key held in memory decrypts nothing afterwards — leaving it in place
+  /// would show a list of decryption failures instead of a password prompt.
+  /// Clearing it also stops [_guard] from reloading entries it cannot read.
+  Future<void> restoreFrom(String backupPath) => _guard(() async {
+        _repo!.restoreFrom(backupPath);
+        lock();
+      });
+
   Future<void> changeMasterPassword(String next, String confirmation) async {
     if (next != confirmation) {
       _fail('The two new master passwords do not match');

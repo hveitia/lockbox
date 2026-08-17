@@ -75,6 +75,18 @@ picker. Here you choose the location, which is the better answer — a backup
 sitting next to the original does not survive losing the disk. Both clients name
 the file identically, and `vault_repository_test.dart` asserts that they agree.
 
+**Restore** picks a backup, confirms, replaces the vault, and locks it. The lock
+is not a courtesy: the backup brings its own salt and verifier, so afterwards
+the master password is the one that was in use when that backup was taken.
+
+Restoring runs inside SQLite as a single transaction rather than as a file copy.
+Copying a backup over the vault file looks like it works and does not — any
+process still holding the vault open writes its own write-ahead log over it
+afterwards, and the discarded rows come back with no error shown. A backup that
+is not a vault is rejected before anything is deleted.
+
+Either client can restore a backup either one wrote.
+
 ## Tests
 
 ```bash

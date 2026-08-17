@@ -1,6 +1,6 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
-import type { DatabaseSync } from "node:sqlite";
+import { DatabaseSync } from "node:sqlite";
 
 import {
   createSalt,
@@ -281,6 +281,115 @@ export function deleteEntry(db: DatabaseSync, id: number): void {
  */
 export function backupVault(db: DatabaseSync, destinationPath: string): void {
   db.prepare("VACUUM INTO ?").run(destinationPath);
+}
+
+/**
+ * Column names a table actually has, in declaration order.
+ *
+ * The schema goes before the pragma, not on the table: `PRAGMA x.table_info(t)`
+ * is the form that reaches an attached database. `table_info(x.t)` is a syntax
+ * error.
+ */
+function columnsOf(db: DatabaseSync, table: string, schema = "main"): string[] {
+  return (db.prepare(`PRAGMA ${schema}.table_info(${table})`).all() as unknown as {
+    name: string;
+  }[]).map((column) => column.name);
+}
+
+/**
+ * Throws unless `candidatePath` is a readable SQLite file shaped like a vault.
+ *
+ * Restoring destroys what is already there, so a bad source has to be rejected
+ * before anything is deleted rather than halfway through.
+ */
+function assertRestorable(candidatePath: string): void {
+  if (!existsSync(candidatePath)) {
+    throw new Error(`There is no file at ${candidatePath}`);
+  }
+
+  let candidate: DatabaseSync;
+  try {
+    candidate = new DatabaseSync(candidatePath, { readOnly: true });
+  } catch {
+    throw new Error("That file is not a database");
+  }
+
+  try {
+    // Reading the schema is what actually touches the file; opening is lazy,
+    // so a text file with a .db suffix only fails here.
+    let tables: string[];
+    try {
+      tables = (candidate
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .all() as unknown as { name: string }[]).map((row) => row.name);
+    } catch {
+      throw new Error("That file is not a database");
+    }
+
+    for (const required of ["vault_meta", "entries"]) {
+      if (!tables.includes(required)) {
+        throw new Error("That file is not a vault backup");
+      }
+    }
+
+    const meta = candidate.prepare("SELECT count(*) AS n FROM vault_meta").get() as {
+      n: number;
+    };
+
+    if (meta.n !== 1) {
+      throw new Error("That backup has no master password recorded");
+    }
+  } finally {
+    candidate.close();
+  }
+}
+
+/**
+ * Replaces the contents of `db` with those of the vault at `backupPath`.
+ *
+ * Deliberately not a file copy. Overwriting vault.db from outside is a silent
+ * corruption trap: any process still holding the vault open checkpoints its
+ * write-ahead log over the restored file afterwards, so the discarded rows come
+ * back with no error shown. Doing it as SQL inside one transaction sidesteps
+ * that entirely — SQLite's own locking handles other readers, and a failure
+ * rolls back to the vault as it was.
+ *
+ * The backup's `vault_meta` comes across too, so the vault ends up on whatever
+ * master password the backup was taken under. Callers must drop any key they
+ * are holding afterwards; it no longer opens anything.
+ */
+export function restoreVault(db: DatabaseSync, backupPath: string): void {
+  assertRestorable(backupPath);
+
+  db.prepare("ATTACH DATABASE ? AS restore_source").run(backupPath);
+  try {
+    // A backup taken before url/favorite/color existed simply has fewer
+    // columns; the missing ones stay NULL, which readEntry already treats as
+    // "written before this existed".
+    const inBackup = columnsOf(db, "entries", "restore_source");
+    const shared = columnsOf(db, "entries").filter((c) => inBackup.includes(c));
+    const columnList = shared.join(", ");
+
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec("DELETE FROM entries");
+      db.exec("DELETE FROM vault_meta");
+      db.exec(
+        `INSERT INTO vault_meta (id, salt, verifier)
+         SELECT id, salt, verifier FROM restore_source.vault_meta`,
+      );
+      db.exec(
+        `INSERT INTO entries (${columnList})
+         SELECT ${columnList} FROM restore_source.entries`,
+      );
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  } finally {
+    db.exec("DETACH DATABASE restore_source");
+  }
 }
 
 /**

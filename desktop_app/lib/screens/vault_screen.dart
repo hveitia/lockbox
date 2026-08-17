@@ -137,6 +137,45 @@ class _VaultScreenState extends State<VaultScreen> {
     );
   }
 
+  /// Replaces the vault from a backup the user picks, after confirming.
+  ///
+  /// Confirmation is not ceremony here: this discards everything added since
+  /// the backup was taken, and there is no undo.
+  Future<void> _restore() async {
+    const group = XTypeGroup(label: 'Vault backup', extensions: ['db']);
+    final file = await openFile(acceptedTypeGroups: const [group]);
+
+    if (file == null || !mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: VaultTheme.inkRaised,
+        title: const Text('Replace the vault?'),
+        content: Text(
+          'Everything currently in the vault is replaced by the contents of '
+          '${file.name}. Anything added since that backup was taken is lost.\n\n'
+          'The backup carries its own master password — the one in use when it '
+          'was taken. The vault locks afterwards so you can sign back in.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Replace'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    await widget.controller.restoreFrom(file.path);
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
@@ -216,6 +255,10 @@ class _VaultScreenState extends State<VaultScreen> {
             OutlinedButton(
               onPressed: widget.controller.busy ? null : _backup,
               child: const Text('Backup'),
+            ),
+            OutlinedButton(
+              onPressed: widget.controller.busy ? null : _restore,
+              child: const Text('Restore'),
             ),
             OutlinedButton(
               onPressed: () => showDialog(

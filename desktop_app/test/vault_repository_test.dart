@@ -507,4 +507,98 @@ void main() {
       });
     });
   });
+
+  group('restore', () {
+    late Directory workspace;
+    late VaultRepository repo;
+    late Uint8List key;
+    late String backupPath;
+
+    setUp(() {
+      workspace = Directory.systemTemp.createTempSync('vault-restore-');
+      repo = VaultRepository.open('${workspace.path}/vault.db');
+      repo.initialize(master);
+      key = repo.unlock(master)!;
+      repo.createEntry(key, entryInput(app: 'First'));
+      repo.createEntry(key, entryInput(app: 'Second'));
+
+      backupPath = '${workspace.path}/snapshot.db';
+      repo.backupTo(backupPath);
+    });
+
+    tearDown(() {
+      repo.dispose();
+      workspace.deleteSync(recursive: true);
+    });
+
+    test('puts back exactly what the backup held', () {
+      repo.createEntry(key, entryInput(app: 'Added after the backup'));
+      repo.deleteEntry(
+        repo.listEntries(key).firstWhere((e) => e.app == 'First').id,
+      );
+
+      repo.restoreFrom(backupPath);
+
+      expect(
+        repo.listEntries(repo.unlock(master)!).map((e) => e.app).toList()..sort(),
+        ['First', 'Second'],
+      );
+    });
+
+    test('restores the master password the backup was taken under', () {
+      repo.changeMasterPassword(key, 'a-different-master-password');
+      expect(repo.unlock(master), isNull, reason: 'precondition');
+
+      repo.restoreFrom(backupPath);
+
+      expect(repo.unlock(master), isNotNull);
+      expect(repo.unlock('a-different-master-password'), isNull);
+    });
+
+    /// The vault is being overwritten, so a bad source has to be rejected
+    /// before anything is deleted, not halfway through.
+    test('refuses a database that is not a vault, leaving the vault alone', () {
+      final other = '${workspace.path}/not-a-vault.db';
+      final db = sqlite3.open(other);
+      db.execute('CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT)');
+      db.close();
+
+      expect(() => repo.restoreFrom(other), throwsA(isA<ValidationError>()));
+      expect(repo.listEntries(key).length, 2);
+    });
+
+    test('refuses a file that is not a database at all', () {
+      final garbage = '${workspace.path}/garbage.db';
+      File(garbage).writeAsStringSync('not a database, just text\n');
+
+      expect(() => repo.restoreFrom(garbage), throwsA(isA<ValidationError>()));
+      expect(repo.listEntries(key).length, 2);
+    });
+
+    test('refuses a path that does not exist', () {
+      expect(
+        () => repo.restoreFrom('${workspace.path}/absent.db'),
+        throwsA(isA<ValidationError>()),
+      );
+      expect(repo.listEntries(key).length, 2);
+    });
+
+    test('leaves the vault usable for writes afterwards', () {
+      repo.restoreFrom(backupPath);
+
+      final restoredKey = repo.unlock(master)!;
+      repo.createEntry(restoredKey, entryInput(app: 'Written after restore'));
+
+      expect(repo.listEntries(restoredKey).length, 3);
+    });
+
+    test('restores a backup the web app could equally have written', () {
+      // Same code path both clients use; this pins the round trip.
+      repo.restoreFrom(backupPath);
+      final restored = VaultRepository.open('${workspace.path}/vault.db');
+      addTearDown(restored.dispose);
+
+      expect(restored.listEntries(restored.unlock(master)!).length, 2);
+    });
+  });
 }

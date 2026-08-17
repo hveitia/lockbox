@@ -1,11 +1,16 @@
 import "server-only";
 
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { cookies } from "next/headers";
 
-import { createBackup, migrate, unlock as unlockVault } from "./vault.ts";
+import {
+  createBackup,
+  migrate,
+  restoreVault,
+  unlock as unlockVault,
+} from "./vault.ts";
 import { createSessionStore, type SessionStore } from "./session-store.ts";
 
 export const SESSION_COOKIE = "vault_session";
@@ -45,6 +50,42 @@ export function getDatabase(): DatabaseSync {
  */
 export function writeBackup(): string {
   return createBackup(getDatabase(), path.join(path.dirname(DB_PATH), "backups"));
+}
+
+function backupDirectory(): string {
+  return path.join(path.dirname(DB_PATH), "backups");
+}
+
+/** Backups on disk, newest first. Names are timestamps, so this sorts by name. */
+export function listBackups(): string[] {
+  const directory = backupDirectory();
+  if (!existsSync(directory)) return [];
+
+  return readdirSync(directory)
+    .filter((name) => name.endsWith(".db"))
+    .sort()
+    .reverse();
+}
+
+/**
+ * Restores a backup by name and re-locks the vault.
+ *
+ * Every unlocked session holds a key derived from the salt that was just
+ * replaced, so none of them decrypt anything any more. Dropping them is not
+ * tidiness — leaving one alive would leave a browser sitting in front of a
+ * vault it can no longer read, showing decryption failures instead of a
+ * password prompt.
+ *
+ * Only a plain filename is accepted: it comes from a browser, so a path is
+ * untrusted input and `../..` must not be able to point this anywhere.
+ */
+export function restoreBackup(name: string): void {
+  if (name !== path.basename(name) || !name.endsWith(".db")) {
+    throw new Error("That is not a backup name");
+  }
+
+  restoreVault(getDatabase(), path.join(backupDirectory(), name));
+  getSessions().destroyAll();
 }
 
 export function getSessions(): SessionStore {

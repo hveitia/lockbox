@@ -1,7 +1,13 @@
 import { test, describe, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { mkdtempSync, rmSync, existsSync, copyFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  rmSync,
+  existsSync,
+  copyFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -18,7 +24,9 @@ import {
   changeMasterPassword,
   backupVault,
   createBackup,
+  restoreVault,
 } from "./vault.ts";
+import { encrypt as encryptWith } from "./crypto.ts";
 import type { EntryInput } from "./entry.ts";
 
 const MASTER = "a-strong-master-password";
@@ -616,6 +624,116 @@ describe("backupVault", () => {
       assert.ok(restoredKey);
       assert.equal(listEntries(restored, restoredKey).length, 2);
       restored.close();
+    });
+  });
+
+  describe("restoreVault", () => {
+    let backupPath: string;
+
+    beforeEach(() => {
+      backupPath = path.join(workspace, `snapshot-${run++}.db`);
+      backupVault(source, backupPath);
+    });
+
+    test("puts back exactly what the backup held", () => {
+      createEntry(source, key, input({ app: "Added after the backup" }));
+      deleteEntry(source, listEntries(source, key).find((e) => e.app === "First")!.id);
+
+      restoreVault(source, backupPath);
+
+      assert.deepEqual(
+        listEntries(source, unlock(source, MASTER)!).map((e) => e.app).sort(),
+        ["First", "Second"],
+      );
+    });
+
+    test("restores the master password the backup was taken under", () => {
+      changeMasterPassword(source, key, "a-different-master-password");
+      assert.equal(unlock(source, MASTER), null, "precondition: password changed");
+
+      restoreVault(source, backupPath);
+
+      assert.ok(unlock(source, MASTER), "the backup's password should work again");
+      assert.equal(unlock(source, "a-different-master-password"), null);
+    });
+
+    /**
+     * The vault is being overwritten, so a bad source has to be caught before
+     * anything is deleted, not halfway through.
+     */
+    test("refuses a database that is not a vault, leaving the vault untouched", () => {
+      const notAVault = path.join(workspace, "not-a-vault.db");
+      const other = new DatabaseSync(notAVault);
+      other.exec("CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT)");
+      other.close();
+
+      assert.throws(() => restoreVault(source, notAVault));
+      assert.equal(listEntries(source, key).length, 2);
+    });
+
+    test("refuses a file that is not a database at all", () => {
+      const garbage = path.join(workspace, "garbage.db");
+      writeFileSync(garbage, "this is not a database, it is a text file\n");
+
+      assert.throws(() => restoreVault(source, garbage));
+      assert.equal(listEntries(source, key).length, 2);
+    });
+
+    test("refuses a path that does not exist", () => {
+      assert.throws(() => restoreVault(source, path.join(workspace, "absent.db")));
+      assert.equal(listEntries(source, key).length, 2);
+    });
+
+    /** Backups predate url/favorite/color; those rows must still come back. */
+    test("accepts a backup written before the newer columns existed", () => {
+      const legacyPath = path.join(workspace, `legacy-${run++}.db`);
+      const legacy = new DatabaseSync(legacyPath);
+      legacy.exec(`
+        CREATE TABLE vault_meta (
+          id INTEGER PRIMARY KEY CHECK (id = 1), salt TEXT NOT NULL, verifier TEXT NOT NULL
+        );
+        CREATE TABLE entries (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, app TEXT NOT NULL, username TEXT NOT NULL,
+          password TEXT NOT NULL, comment TEXT NOT NULL,
+          created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        );
+      `);
+      const meta = source
+        .prepare("SELECT salt, verifier FROM vault_meta WHERE id = 1")
+        .get() as { salt: string; verifier: string };
+      legacy
+        .prepare("INSERT INTO vault_meta (id, salt, verifier) VALUES (1, ?, ?)")
+        .run(meta.salt, meta.verifier);
+      legacy
+        .prepare(
+          `INSERT INTO entries (app, username, password, comment, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          encryptWith("Old row", key),
+          encryptWith("", key),
+          encryptWith("pw", key),
+          encryptWith("", key),
+          "2026-01-01T00:00:00.000Z",
+          "2026-01-01T00:00:00.000Z",
+        );
+      legacy.close();
+
+      restoreVault(source, legacyPath);
+
+      const rows = listEntries(source, unlock(source, MASTER)!);
+      assert.deepEqual(rows.map((e) => e.app), ["Old row"]);
+      assert.equal(rows[0].url, "");
+      assert.equal(rows[0].favorite, false);
+    });
+
+    test("leaves the vault usable for writes afterwards", () => {
+      restoreVault(source, backupPath);
+
+      const restoredKey = unlock(source, MASTER)!;
+      createEntry(source, restoredKey, input({ app: "Written after restore" }));
+
+      assert.equal(listEntries(source, restoredKey).length, 3);
     });
   });
 });

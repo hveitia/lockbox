@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:sqlite3/sqlite3.dart';
@@ -263,6 +264,105 @@ class VaultRepository {
       statement.execute([destinationPath]);
     } finally {
       statement.close();
+    }
+  }
+
+  /// Column names a table actually has.
+  ///
+  /// The schema goes before the pragma, not on the table: `PRAGMA x.table_info(t)`
+  /// reaches an attached database, `table_info(x.t)` is a syntax error.
+  List<String> _columnsOf(String table, {String schema = 'main'}) => _db
+      .select('PRAGMA $schema.table_info($table)')
+      .map((row) => row['name'] as String)
+      .toList();
+
+  /// Throws unless [candidatePath] is a readable SQLite file shaped like a
+  /// vault. Restoring destroys what is already there, so a bad source has to be
+  /// rejected before anything is deleted rather than halfway through.
+  static void _assertRestorable(String candidatePath) {
+    if (!File(candidatePath).existsSync()) {
+      throw ValidationError('There is no file at $candidatePath');
+    }
+
+    late final Database candidate;
+    try {
+      candidate = sqlite3.open(candidatePath, mode: OpenMode.readOnly);
+    } on SqliteException {
+      throw const ValidationError('That file is not a database');
+    }
+
+    try {
+      final List<String> tables;
+      try {
+        // Opening is lazy; reading the schema is what touches the file, so a
+        // text file named .db only fails here.
+        tables = candidate
+            .select("SELECT name FROM sqlite_master WHERE type = 'table'")
+            .map((row) => row['name'] as String)
+            .toList();
+      } on SqliteException {
+        throw const ValidationError('That file is not a database');
+      }
+
+      for (final required in ['vault_meta', 'entries']) {
+        if (!tables.contains(required)) {
+          throw const ValidationError('That file is not a vault backup');
+        }
+      }
+
+      final count = candidate.select('SELECT count(*) AS n FROM vault_meta');
+      if (count.first['n'] != 1) {
+        throw const ValidationError(
+          'That backup has no master password recorded',
+        );
+      }
+    } finally {
+      candidate.close();
+    }
+  }
+
+  /// Replaces this vault's contents with those of the vault at [backupPath].
+  ///
+  /// Deliberately not a file copy. Overwriting the vault file from outside is a
+  /// silent corruption trap: any process still holding it open checkpoints its
+  /// write-ahead log over the restored file afterwards, so the discarded rows
+  /// come back with no error shown. Doing it as SQL in one transaction sidesteps
+  /// that — SQLite's locking handles other readers, and a failure rolls back to
+  /// the vault as it was.
+  ///
+  /// The backup's `vault_meta` comes across too, so the vault ends up on the
+  /// master password the backup was taken under. Callers must drop any key they
+  /// hold afterwards; it no longer opens anything.
+  void restoreFrom(String backupPath) {
+    _assertRestorable(backupPath);
+
+    _db.execute('ATTACH DATABASE ? AS restore_source', [backupPath]);
+    try {
+      // A backup taken before url/favorite/color existed simply has fewer
+      // columns; the missing ones stay NULL, which _decryptAdded already reads
+      // as "written before this existed".
+      final inBackup = _columnsOf('entries', schema: 'restore_source');
+      final shared = _columnsOf('entries').where(inBackup.contains).join(', ');
+
+      _db.execute('BEGIN IMMEDIATE');
+      try {
+        _db.execute('DELETE FROM entries');
+        _db.execute('DELETE FROM vault_meta');
+        _db.execute(
+          'INSERT INTO vault_meta (id, salt, verifier) '
+          'SELECT id, salt, verifier FROM restore_source.vault_meta',
+        );
+        _db.execute(
+          'INSERT INTO entries ($shared) '
+          'SELECT $shared FROM restore_source.entries',
+        );
+        _db.execute('COMMIT');
+      } catch (_) {
+        _db.execute('ROLLBACK');
+        rethrow;
+      }
+    } finally {
+      _db.execute('DETACH DATABASE restore_source');
     }
   }
 
