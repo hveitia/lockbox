@@ -11,4 +11,4 @@ PRODUCT_NAME = Vault
 PRODUCT_BUNDLE_IDENTIFIER = dev.hector.vaultDesktop
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 dev.hector. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 Hector Veitia. MIT licensed.
