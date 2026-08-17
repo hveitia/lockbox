@@ -121,6 +121,16 @@ Changing it (via **Master password**) re-encrypts every entry under the new key.
 Copy `data/vault.db` wherever you like — it is encrypted at rest, so a backup on a
 sync service is still unreadable without the master password. `data/` is gitignored.
 
+## Desktop app
+
+`desktop_app/` is a native macOS client for this same vault, written in Flutter.
+It opens `data/vault.db` in place — same schema, same crypto, same entries — so
+the two apps are interchangeable. See `desktop_app/README.md`.
+
+```bash
+cd desktop_app && flutter run -d macos
+```
+
 ## What this is not
 
 This trusts the machine it runs on. It does not defend against malware already

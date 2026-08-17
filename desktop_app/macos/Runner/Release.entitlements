@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  The App Sandbox is deliberately off. This app opens a vault file the user
+	  points it at, anywhere on disk, and must reopen the same path on every
+	  launch. Under the sandbox that needs security-scoped bookmarks in native
+	  Swift, for no benefit here: this is a local tool that is not distributed.
+	  Turn it back on only if this ever ships through the App Store.
+	-->
+</dict>
+</plist>
