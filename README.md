@@ -209,6 +209,12 @@ pnpm typecheck
 | `src/app/actions.ts` | Server actions |
 | `src/components/` | UI |
 
+## Security
+
+The threat model, the known weaknesses, and how to report a vulnerability
+privately are in [SECURITY.md](SECURITY.md). Read it before trusting this with
+anything that matters.
+
 ## License
 
 MIT — see [LICENSE](LICENSE). Use it, fork it, change it.
