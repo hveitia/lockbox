@@ -21,7 +21,7 @@ For a standalone app bundle:
 
 ```bash
 flutter build macos --release
-open build/macos/Build/Products/Release/vault_desktop.app
+open build/macos/Build/Products/Release/Vault.app
 ```
 
 ## First launch
