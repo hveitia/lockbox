@@ -174,3 +174,12 @@ pnpm typecheck
 | `src/lib/server.ts` | Database and session singletons, cookie handling |
 | `src/app/actions.ts` | Server actions |
 | `src/components/` | UI |
+
+## License
+
+MIT — see [LICENSE](LICENSE). Use it, fork it, change it.
+
+It comes with no warranty, and that is not boilerplate here: this is a tool you
+run yourself, on your own machine, holding your own secrets. Read the threat
+model above before you trust it with anything you cannot afford to lose, and
+keep a backup.
