@@ -39,3 +39,20 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local vault database — never commit this
+/data
+
+# sqlite sidecars. Test fixtures are committed checkpointed, so the .db file
+# stands alone; a stray -wal would be uncommitted data pretending to be data.
+*.db-shm
+*.db-wal
+
+# editors
+.idea/
+
+# agent tooling
+.atl/
+
+# stray logs from other tools
+firebase-debug.log
