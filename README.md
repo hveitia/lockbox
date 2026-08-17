@@ -32,6 +32,21 @@ are offered, so the filter row never shows a swatch that would return nothing.
 Nothing leaves the machine: the app binds to `127.0.0.1`, has no network calls, and
 the database is a single SQLite file under `data/`.
 
+## Requirements
+
+- **Node 24 or newer.** Two things depend on it, and neither degrades gracefully
+  on an older runtime: the vault is stored through `node:sqlite`, so there is no
+  native module to compile and nothing to install, and the test suite runs
+  TypeScript files directly because Node strips the types itself.
+- **pnpm.** The lockfile is pnpm's. Other package managers will resolve a
+  different dependency tree.
+- macOS, Linux, or Windows for the web app. The desktop client in `desktop_app/`
+  is macOS only — see its own README.
+
+Check with `node --version` before anything else. On an older Node the failure
+is an import error deep in a stack trace, which reads like a broken project
+rather than a version mismatch.
+
 ## Starting the app
 
 Every command below runs from the repository root.
