@@ -276,10 +276,25 @@ class VaultRepository {
       .map((row) => row['name'] as String)
       .toList();
 
+  /// Backs the vault up into [directory] under a timestamped name, creating
+  /// the directory if needed, and returns the path written.
+  ///
+  /// Mirrors `createBackup` in `src/lib/vault.ts`. [now] is injectable so the
+  /// name is testable; nothing else should pass it.
+  String createBackupIn(String directory, {DateTime? now}) {
+    Directory(directory).createSync(recursive: true);
+
+    final destination =
+        '$directory/${suggestedBackupName(now ?? DateTime.now())}';
+    backupTo(destination);
+
+    return destination;
+  }
+
   /// Throws unless [candidatePath] is a readable SQLite file shaped like a
   /// vault. Restoring destroys what is already there, so a bad source has to be
   /// rejected before anything is deleted rather than halfway through.
-  static void _assertRestorable(String candidatePath) {
+  static void assertRestorable(String candidatePath) {
     if (!File(candidatePath).existsSync()) {
       throw ValidationError('There is no file at $candidatePath');
     }
@@ -334,7 +349,7 @@ class VaultRepository {
   /// master password the backup was taken under. Callers must drop any key they
   /// hold afterwards; it no longer opens anything.
   void restoreFrom(String backupPath) {
-    _assertRestorable(backupPath);
+    assertRestorable(backupPath);
 
     _db.execute('ATTACH DATABASE ? AS restore_source', [backupPath]);
     try {

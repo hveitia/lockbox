@@ -38,6 +38,7 @@ class VaultController extends ChangeNotifier {
   String? _dbPath;
   String? _error;
   bool _busy = false;
+  String? _safetyCopy;
   List<Entry> _entries = const [];
 
   String _query = '';
@@ -201,6 +202,9 @@ class VaultController extends ChangeNotifier {
         _repo!.backupTo(destinationPath);
       });
 
+  /// Where the pre-restore safety copy went, for the last restore that ran.
+  String? get safetyCopy => _safetyCopy;
+
   /// Replaces the vault's contents with a backup, then locks.
   ///
   /// Locking is not a courtesy. The backup brings its own salt and verifier, so
@@ -208,6 +212,17 @@ class VaultController extends ChangeNotifier {
   /// would show a list of decryption failures instead of a password prompt.
   /// Clearing it also stops [_guard] from reloading entries it cannot read.
   Future<void> restoreFrom(String backupPath) => _guard(() async {
+        // Validate before writing anything, so a rejected source does not leave
+        // a safety copy behind for a restore that never happened.
+        VaultRepository.assertRestorable(backupPath);
+
+        // Restore is the one destructive thing here and it has no undo, so the
+        // state about to be replaced becomes a backup of its own first. Picking
+        // the wrong file then costs a second restore rather than the data.
+        _safetyCopy = _repo!.createBackupIn(
+          '${File(_dbPath!).parent.path}/backups',
+        );
+
         _repo!.restoreFrom(backupPath);
         lock();
       });

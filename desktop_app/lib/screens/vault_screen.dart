@@ -154,8 +154,10 @@ class _VaultScreenState extends State<VaultScreen> {
         title: const Text('Replace the vault?'),
         content: Text(
           'Everything currently in the vault is replaced by the contents of '
-          '${file.name}. Anything added since that backup was taken is lost.\n\n'
-          'The backup carries its own master password — the one in use when it '
+          '${file.name}.\n\n'
+          'The vault as it stands right now is backed up first, so this can be '
+          'undone — restore that copy to come back.\n\n'
+          'The backup carries its own master password: the one in use when it '
           'was taken. The vault locks afterwards so you can sign back in.',
         ),
         actions: [
@@ -174,6 +176,20 @@ class _VaultScreenState extends State<VaultScreen> {
     if (confirmed != true) return;
 
     await widget.controller.restoreFrom(file.path);
+    if (!mounted || widget.controller.error != null) return;
+
+    // Shown over the unlock screen the restore just dropped us on. Telling
+    // someone the undo exists only helps if they are told where it is.
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Restored. The vault as it was is saved at '
+          '${widget.controller.safetyCopy}',
+        ),
+        backgroundColor: VaultTheme.inkRaised,
+        duration: const Duration(seconds: 8),
+      ),
+    );
   }
 
   @override

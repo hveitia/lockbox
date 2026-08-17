@@ -592,6 +592,55 @@ void main() {
       expect(repo.listEntries(restoredKey).length, 3);
     });
 
+    /// Restore has no undo, so the caller captures what it is about to replace.
+    /// This is the piece that makes that possible.
+    group('createBackupIn', () {
+      test('creates the directory and returns the path written', () {
+        final directory = '${workspace.path}/nested/backups';
+
+        final written = repo.createBackupIn(directory);
+
+        expect(File(written).existsSync(), isTrue);
+        expect(File(written).parent.path, directory);
+      });
+
+      test('names the file the same way the web app does', () {
+        final written = repo.createBackupIn(
+          '${workspace.path}/named',
+          now: DateTime.utc(2026, 1, 2, 3, 4, 5, 6),
+        );
+
+        expect(
+          written.split('/').last,
+          'vault-2026-01-02T03-04-05-006.db',
+        );
+      });
+
+      test('captures the state that a restore is about to replace', () {
+        repo.createEntry(key, entryInput(app: 'Only in the live vault'));
+
+        final safety = repo.createBackupIn('${workspace.path}/safety');
+        repo.restoreFrom(backupPath);
+
+        // The live vault no longer has it...
+        expect(
+          repo.listEntries(repo.unlock(master)!).any(
+                (e) => e.app == 'Only in the live vault',
+              ),
+          isFalse,
+        );
+
+        // ...and restoring the safety copy brings it back.
+        repo.restoreFrom(safety);
+        expect(
+          repo.listEntries(repo.unlock(master)!).any(
+                (e) => e.app == 'Only in the live vault',
+              ),
+          isTrue,
+        );
+      });
+    });
+
     test('restores a backup the web app could equally have written', () {
       // Same code path both clients use; this pins the round trip.
       repo.restoreFrom(backupPath);

@@ -162,6 +162,10 @@ the app is using.
 Press **Restore**, pick a backup, confirm. The vault's contents are replaced and
 the vault locks.
 
+**Restoring is undoable.** The vault as it stands is backed up before anything
+is replaced, so it becomes the newest entry in the same list. Pick the wrong
+backup and the cost is a second restore, not the data.
+
 It locks because the backup brings its own salt and verifier with it: after a
 restore the master password is whatever it was when that backup was taken, which
 is not necessarily the one you just used.

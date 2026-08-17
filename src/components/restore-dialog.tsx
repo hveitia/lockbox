@@ -48,7 +48,12 @@ export function RestoreDialog({
         <form action={formAction} className="space-y-4">
           <p className="text-sm leading-relaxed text-muted">
             This replaces everything in the vault with the contents of the
-            backup. Anything added since it was taken is lost.
+            backup.
+          </p>
+          <p className="text-sm leading-relaxed text-muted">
+            The vault as it stands right now is backed up first, so this can be
+            undone: it becomes the newest entry in this list. Pick it here to
+            come back.
           </p>
           <p className="text-sm leading-relaxed text-muted">
             The backup carries its own master password — the one in use when it

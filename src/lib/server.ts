@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { cookies } from "next/headers";
 
 import {
+  assertRestorable,
   createBackup,
   migrate,
   restoreVault,
@@ -84,7 +85,19 @@ export function restoreBackup(name: string): void {
     throw new Error("That is not a backup name");
   }
 
-  restoreVault(getDatabase(), path.join(backupDirectory(), name));
+  const source = path.join(backupDirectory(), name);
+
+  // Validate before writing anything: a rejected source should not leave a
+  // safety copy behind for a restore that never happened.
+  assertRestorable(source);
+
+  // Restore is the one destructive thing here and it has no undo, so the state
+  // about to be replaced becomes a backup of its own first. Picking the wrong
+  // file then costs a second restore rather than the data. It lands in the same
+  // directory, so it shows up at the top of the list as the newest backup.
+  createBackup(getDatabase(), backupDirectory());
+
+  restoreVault(getDatabase(), source);
   getSessions().destroyAll();
 }
 

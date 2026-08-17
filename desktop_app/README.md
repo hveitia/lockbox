@@ -79,6 +79,10 @@ the file identically, and `vault_repository_test.dart` asserts that they agree.
 is not a courtesy: the backup brings its own salt and verifier, so afterwards
 the master password is the one that was in use when that backup was taken.
 
+Restoring is undoable. The vault as it stands is backed up into `backups/` next
+to the vault file before anything is replaced, and the path is shown once the
+restore finishes. Picking the wrong backup costs a second restore, not the data.
+
 Restoring runs inside SQLite as a single transaction rather than as a file copy.
 Copying a backup over the vault file looks like it works and does not — any
 process still holding the vault open writes its own write-ahead log over it

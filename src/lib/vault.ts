@@ -302,7 +302,7 @@ function columnsOf(db: DatabaseSync, table: string, schema = "main"): string[] {
  * Restoring destroys what is already there, so a bad source has to be rejected
  * before anything is deleted rather than halfway through.
  */
-function assertRestorable(candidatePath: string): void {
+export function assertRestorable(candidatePath: string): void {
   if (!existsSync(candidatePath)) {
     throw new Error(`There is no file at ${candidatePath}`);
   }

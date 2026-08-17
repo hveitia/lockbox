@@ -25,6 +25,7 @@ import {
   backupVault,
   createBackup,
   restoreVault,
+  assertRestorable,
 } from "./vault.ts";
 import { encrypt as encryptWith } from "./crypto.ts";
 import type { EntryInput } from "./entry.ts";
@@ -734,6 +735,74 @@ describe("backupVault", () => {
       createEntry(source, restoredKey, input({ app: "Written after restore" }));
 
       assert.equal(listEntries(source, restoredKey).length, 3);
+    });
+  });
+
+  /**
+   * Restoring is the one destructive thing in the app and it has no undo, so
+   * the state being replaced is captured first. A mistaken restore then costs
+   * a second restore rather than the data.
+   */
+  describe("safety copy before restoring", () => {
+    let safetyDirectory: string;
+    let snapshot: string;
+
+    beforeEach(() => {
+      safetyDirectory = path.join(workspace, `safety-${run++}`);
+      snapshot = path.join(workspace, `snapshot-${run++}.db`);
+      backupVault(source, snapshot);
+      createEntry(source, key, input({ app: "Only in the live vault" }));
+    });
+
+    test("captures the state being replaced", () => {
+      const safety = createBackup(source, safetyDirectory);
+      restoreVault(source, snapshot);
+
+      // The live vault is now the snapshot...
+      assert.equal(
+        listEntries(source, unlock(source, MASTER)!).some(
+          (e) => e.app === "Only in the live vault",
+        ),
+        false,
+      );
+
+      // ...and what it replaced is still readable.
+      const rescued = new DatabaseSync(safety);
+      assert.equal(
+        listEntries(rescued, unlock(rescued, MASTER)!).some(
+          (e) => e.app === "Only in the live vault",
+        ),
+        true,
+      );
+      rescued.close();
+    });
+
+    test("makes a mistaken restore reversible", () => {
+      const safety = createBackup(source, safetyDirectory);
+      restoreVault(source, snapshot);
+
+      // Changed their mind: go back to where they were.
+      restoreVault(source, safety);
+
+      assert.equal(
+        listEntries(source, unlock(source, MASTER)!).some(
+          (e) => e.app === "Only in the live vault",
+        ),
+        true,
+      );
+    });
+
+    /** Validating first keeps a rejected source from littering the directory. */
+    test("a source that is not a vault is rejected before anything is written", () => {
+      const garbage = path.join(workspace, `garbage-${run++}.db`);
+      writeFileSync(garbage, "not a database\n");
+
+      assert.throws(() => assertRestorable(garbage));
+      assert.equal(existsSync(safetyDirectory), false);
+    });
+
+    test("accepts a real backup", () => {
+      assert.doesNotThrow(() => assertRestorable(snapshot));
     });
   });
 });
