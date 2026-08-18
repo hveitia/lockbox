@@ -13,13 +13,51 @@ const IV_BYTES = 12;
 const TAG_BYTES = 16;
 
 /**
- * scrypt cost parameters. N=2^15 keeps unlocking around ~100ms on a laptop
- * while making offline brute force of the vault file expensive.
+ * scrypt cost parameters, by version.
+ *
+ * The salt is stored in the vault but these are not, which is the whole reason
+ * this table is versioned: a key cannot be reproduced without both, so a vault
+ * has to record which row it was built with. Change these numbers without
+ * recording a version and every existing vault stops opening, indistinguishably
+ * from a wrong password.
+ *
+ * Never edit an existing row — a vault out there was written with it. Add a
+ * row and move `CURRENT_KDF_VERSION`.
+ *
+ * 1: ~44ms to derive on a 2026 laptop, 32MB.
+ * 2: ~183ms, 128MB. OWASP's current floor for scrypt.
  */
-const SCRYPT_N = 32768;
-const SCRYPT_R = 8;
-const SCRYPT_P = 1;
-const SCRYPT_MAXMEM = 128 * SCRYPT_N * SCRYPT_R * 2;
+const KDF_PARAMETERS = {
+  1: { N: 32768, r: 8, p: 1 },
+  2: { N: 131072, r: 8, p: 1 },
+} as const;
+
+export type KdfVersion = keyof typeof KDF_PARAMETERS;
+
+/** What new vaults are written with. */
+export const CURRENT_KDF_VERSION: KdfVersion = 1;
+
+/**
+ * What a missing `kdf_version` means.
+ *
+ * Vaults written before the column existed have NULL there. They were all
+ * built with version 1, so that is what NULL decodes to — this must never
+ * change.
+ */
+export const LEGACY_KDF_VERSION: KdfVersion = 1;
+
+export function kdfParameters(version: number) {
+  const parameters = KDF_PARAMETERS[version as KdfVersion];
+
+  if (!parameters) {
+    throw new Error(
+      `This vault was written with key derivation version ${version}, which ` +
+        `this build does not know about. Use a newer version of the app.`,
+    );
+  }
+
+  return parameters;
+}
 
 /** Constant plaintext used to prove a derived key matches the vault. */
 const VERIFIER_PLAINTEXT = "vault-key-verifier-v1";
@@ -28,13 +66,25 @@ export function createSalt(): Buffer {
   return randomBytes(SALT_BYTES);
 }
 
-/** Derives the vault key from the master password. Intentionally slow. */
-export function deriveKey(masterPassword: string, salt: Buffer): Buffer {
+/**
+ * Derives the vault key from the master password. Intentionally slow.
+ *
+ * `version` selects the cost parameters and defaults to what new vaults use.
+ * Callers opening an existing vault must pass the version recorded in it, not
+ * the default — that is the entire point of recording it.
+ */
+export function deriveKey(
+  masterPassword: string,
+  salt: Buffer,
+  version: number = CURRENT_KDF_VERSION,
+): Buffer {
+  const { N, r, p } = kdfParameters(version);
+
   return scryptSync(masterPassword.normalize("NFKC"), salt, KEY_BYTES, {
-    N: SCRYPT_N,
-    r: SCRYPT_R,
-    p: SCRYPT_P,
-    maxmem: SCRYPT_MAXMEM,
+    N,
+    r,
+    p,
+    maxmem: 128 * N * r * 2,
   });
 }
 

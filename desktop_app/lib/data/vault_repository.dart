@@ -47,6 +47,10 @@ class VaultRepository {
       );
     ''');
 
+    // Records which row of the scrypt parameter table built this vault's key.
+    // NULL means "written before this column existed", which is version 1.
+    _addColumnIfMissing(db, 'vault_meta', 'kdf_version', type: 'INTEGER');
+
     for (final column in ['url', 'favorite', 'color']) {
       _addColumnIfMissing(db, 'entries', column);
     }
@@ -54,7 +58,18 @@ class VaultRepository {
 
   /// SQLite has no `ADD COLUMN IF NOT EXISTS`. New columns must be nullable:
   /// existing rows hold ciphertext and there is no key at migration time.
-  static void _addColumnIfMissing(Database db, String table, String column) {
+  ///
+  /// [type] must match what `addColumnIfMissing` passes in `src/lib/vault.ts`
+  /// for the same column. SQLite gives a column type affinity rather than a
+  /// strict type, so declaring one TEXT here and INTEGER there does not fail —
+  /// it silently stores '1' in one client and 1 in the other, and the mismatch
+  /// only surfaces as a cast error on whichever side reads the other's vault.
+  static void _addColumnIfMissing(
+    Database db,
+    String table,
+    String column, {
+    String type = 'TEXT',
+  }) {
     final existing = db
         .select('PRAGMA table_info($table)')
         .map((row) => row['name'] as String)
@@ -62,14 +77,27 @@ class VaultRepository {
 
     if (existing.contains(column)) return;
 
-    db.execute('ALTER TABLE $table ADD COLUMN $column TEXT');
+    db.execute('ALTER TABLE $table ADD COLUMN $column $type');
   }
 
-  ({String salt, String verifier})? _meta() {
-    final rows = _db.select('SELECT salt, verifier FROM vault_meta WHERE id = 1');
+  ({String salt, String verifier, int kdfVersion})? _meta() {
+    final rows = _db.select(
+      'SELECT salt, verifier, kdf_version FROM vault_meta WHERE id = 1',
+    );
     if (rows.isEmpty) return null;
 
-    return (salt: rows.first['salt'] as String, verifier: rows.first['verifier'] as String);
+    return (
+      salt: rows.first['salt'] as String,
+      verifier: rows.first['verifier'] as String,
+      // Read defensively rather than cast: type affinity means this can come
+      // back as an int or as a String depending on how the column was declared
+      // by whichever client created it.
+      kdfVersion: switch (rows.first['kdf_version']) {
+        final int v => v,
+        final String v => int.tryParse(v) ?? VaultCrypto.legacyKdfVersion,
+        _ => VaultCrypto.legacyKdfVersion,
+      },
+    );
   }
 
   bool get isInitialized => _meta() != null;
@@ -89,8 +117,13 @@ class VaultRepository {
     final key = VaultCrypto.deriveKey(masterPassword, salt);
 
     _db.execute(
-      'INSERT INTO vault_meta (id, salt, verifier) VALUES (1, ?, ?)',
-      [base64.encode(salt), VaultCrypto.createVerifier(key)],
+      'INSERT INTO vault_meta (id, salt, verifier, kdf_version) '
+      'VALUES (1, ?, ?, ?)',
+      [
+        base64.encode(salt),
+        VaultCrypto.createVerifier(key),
+        VaultCrypto.currentKdfVersion,
+      ],
     );
   }
 
@@ -99,9 +132,12 @@ class VaultRepository {
     final meta = _meta();
     if (meta == null) return null;
 
+    // The version the vault recorded, never the current one: an old vault must
+    // keep opening after the parameters move on.
     final key = VaultCrypto.deriveKey(
       masterPassword,
       Uint8List.fromList(base64.decode(meta.salt)),
+      meta.kdfVersion,
     );
 
     return VaultCrypto.verifyKey(key, meta.verifier) ? key : null;
@@ -363,9 +399,18 @@ class VaultRepository {
       try {
         _db.execute('DELETE FROM entries');
         _db.execute('DELETE FROM vault_meta');
+        // Carried across like any other column. A backup taken before
+        // kdf_version existed does not have it, and the NULL that leaves
+        // behind decodes to version 1 — which is what such a backup was built
+        // with. Losing this would make a restored vault unopenable.
+        final inBackupMeta = _columnsOf('vault_meta', schema: 'restore_source');
+        final metaColumns = _columnsOf('vault_meta')
+            .where(inBackupMeta.contains)
+            .join(', ');
+
         _db.execute(
-          'INSERT INTO vault_meta (id, salt, verifier) '
-          'SELECT id, salt, verifier FROM restore_source.vault_meta',
+          'INSERT INTO vault_meta ($metaColumns) '
+          'SELECT $metaColumns FROM restore_source.vault_meta',
         );
         _db.execute(
           'INSERT INTO entries ($shared) '
@@ -423,8 +468,16 @@ class VaultRepository {
     _db.execute('BEGIN');
     try {
       _db.execute(
-        'UPDATE vault_meta SET salt = ?, verifier = ? WHERE id = 1',
-        [base64.encode(salt), VaultCrypto.createVerifier(newKey)],
+        // Re-stamped with the current version, not the one the vault had. This
+        // is also the upgrade path: re-encrypting under a new key is exactly
+        // what moving to stronger parameters requires.
+        'UPDATE vault_meta SET salt = ?, verifier = ?, kdf_version = ? '
+        'WHERE id = 1',
+        [
+          base64.encode(salt),
+          VaultCrypto.createVerifier(newKey),
+          VaultCrypto.currentKdfVersion,
+        ],
       );
 
       for (final entry in entries) {

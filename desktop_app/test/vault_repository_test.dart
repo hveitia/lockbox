@@ -1,9 +1,11 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:vault_desktop/data/entry.dart';
+import 'package:vault_desktop/data/vault_crypto.dart';
 import 'package:vault_desktop/data/vault_repository.dart';
 
 const String interopMaster = 'interop-master-password';
@@ -35,8 +37,22 @@ void main() {
       }
     });
 
-    setUp(() => repo = VaultRepository.open(interopDbPath));
-    tearDown(() => repo.dispose());
+    late Directory scratch;
+
+    // Work on a copy. Opening a vault runs migrate(), which adds any column
+    // the schema has grown since — writing to the committed fixture and
+    // leaving the working tree dirty after a test run.
+    setUp(() {
+      scratch = Directory.systemTemp.createTempSync('vault-interop-');
+      final copy = '${scratch.path}/interop.db';
+      File(interopDbPath).copySync(copy);
+      repo = VaultRepository.open(copy);
+    });
+
+    tearDown(() {
+      repo.dispose();
+      scratch.deleteSync(recursive: true);
+    });
 
     test('is recognised as initialized', () {
       expect(repo.isInitialized, isTrue);
@@ -648,6 +664,137 @@ void main() {
       addTearDown(restored.dispose);
 
       expect(restored.listEntries(restored.unlock(master)!).length, 2);
+    });
+  });
+
+  group('kdf versioning', () {
+    late Directory workspace;
+    late VaultRepository repo;
+
+    setUp(() {
+      workspace = Directory.systemTemp.createTempSync('vault-kdf-');
+      repo = VaultRepository.open('${workspace.path}/vault.db');
+    });
+
+    tearDown(() {
+      repo.dispose();
+      workspace.deleteSync(recursive: true);
+    });
+
+    int? storedVersion(VaultRepository r, String path) {
+      final db = sqlite3.open(path);
+      final v = db.select('SELECT kdf_version FROM vault_meta').first['kdf_version'];
+      db.close();
+      return v as int?;
+    }
+
+    test('stamps a new vault with the current version', () {
+      repo.initialize(master);
+
+      expect(
+        storedVersion(repo, '${workspace.path}/vault.db'),
+        VaultCrypto.currentKdfVersion,
+      );
+    });
+
+    /// The reason the column exists: a vault written before it must keep
+    /// opening, which needs NULL read as the parameters it was built with.
+    test('opens a vault whose version is NULL using version 1', () {
+      repo.initialize(master);
+      final db = sqlite3.open('${workspace.path}/vault.db');
+      db.execute('UPDATE vault_meta SET kdf_version = NULL');
+      db.close();
+
+      final reopened = VaultRepository.open('${workspace.path}/vault.db');
+      addTearDown(reopened.dispose);
+
+      expect(reopened.unlock(master), isNotNull);
+    });
+
+    test('derives with the version the vault records, not the current one', () {
+      final salt = VaultCrypto.createSalt();
+      final keyV2 = VaultCrypto.deriveKey(master, salt, 2);
+
+      final db = sqlite3.open('${workspace.path}/vault.db');
+      VaultRepository.migrate(db);
+      db.execute(
+        'INSERT INTO vault_meta (id, salt, verifier, kdf_version) '
+        'VALUES (1, ?, ?, 2)',
+        [base64.encode(salt), VaultCrypto.createVerifier(keyV2)],
+      );
+      db.close();
+
+      final reopened = VaultRepository.open('${workspace.path}/vault.db');
+      addTearDown(reopened.dispose);
+
+      final opened = reopened.unlock(master);
+      expect(opened, isNotNull, reason: 'a version 2 vault should open');
+      expect(opened, equals(keyV2));
+      expect(
+        opened,
+        isNot(equals(VaultCrypto.deriveKey(master, salt, 1))),
+        reason: 'and must not be the version 1 key',
+      );
+    });
+
+    test('says so plainly when the version is one this build cannot handle', () {
+      expect(
+        () => VaultCrypto.deriveKey(master, VaultCrypto.createSalt(), 99),
+        throwsA(
+          isA<ValidationError>().having(
+            (e) => e.message,
+            'message',
+            contains('version 99'),
+          ),
+        ),
+      );
+    });
+
+    test('changing the master password re-stamps the current version', () {
+      repo.initialize(master);
+      final db = sqlite3.open('${workspace.path}/vault.db');
+      db.execute('UPDATE vault_meta SET kdf_version = NULL');
+      db.close();
+
+      final reopened = VaultRepository.open('${workspace.path}/vault.db');
+      addTearDown(reopened.dispose);
+      reopened.changeMasterPassword(reopened.unlock(master)!, 'a-new-master-pw');
+
+      expect(
+        storedVersion(reopened, '${workspace.path}/vault.db'),
+        VaultCrypto.currentKdfVersion,
+      );
+      expect(reopened.unlock('a-new-master-pw'), isNotNull);
+    });
+
+    test('carries the version across a restore', () {
+      repo.initialize(master);
+      final snapshot = '${workspace.path}/snapshot.db';
+      repo.backupTo(snapshot);
+      repo.restoreFrom(snapshot);
+
+      expect(
+        storedVersion(repo, '${workspace.path}/vault.db'),
+        VaultCrypto.currentKdfVersion,
+        reason: 'a restore must not reset the version',
+      );
+      expect(repo.unlock(master), isNotNull);
+    });
+
+    /// The two clients derive keys for the same vault, so their parameter
+    /// tables must agree. src/lib/crypto.ts holds the other copy.
+    test('the parameter table matches the one Node uses', () {
+      final salt = Uint8List.fromList(List<int>.generate(16, (i) => i));
+
+      // Version 1 is what every existing vault and every interop fixture was
+      // built with; if this ever changes, both apps stop reading them.
+      expect(
+        VaultCrypto.deriveKey('a-strong-master-password', salt, 1),
+        equals(VaultCrypto.deriveKey('a-strong-master-password', salt)),
+        reason: 'the default must still be version 1',
+      );
+      expect(VaultCrypto.currentKdfVersion, 1);
+      expect(VaultCrypto.legacyKdfVersion, 1);
     });
   });
 }

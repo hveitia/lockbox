@@ -5,6 +5,8 @@ import 'dart:typed_data';
 import 'package:pointycastle/export.dart';
 import 'package:unorm_dart/unorm_dart.dart' show nfkc;
 
+import 'entry.dart';
+
 /// Dart mirror of `src/lib/crypto.ts`.
 ///
 /// Every parameter here — scrypt cost, key length, IV size, tag size, and the
@@ -19,9 +21,28 @@ class VaultCrypto {
   static const int ivBytes = 12;
   static const int tagBytes = 16;
 
-  static const int _scryptN = 32768;
-  static const int _scryptR = 8;
-  static const int _scryptP = 1;
+  /// scrypt cost parameters, by version. Mirrors `KDF_PARAMETERS` in
+  /// `src/lib/crypto.ts` and must not drift from it.
+  ///
+  /// The salt is stored in the vault but these are not, which is why the table
+  /// is versioned: a key needs both to be reproduced, so a vault records which
+  /// row built it. Change these without recording a version and every existing
+  /// vault stops opening, indistinguishably from a wrong password.
+  ///
+  /// Never edit an existing row — a vault out there was written with it. Add a
+  /// row and move [currentKdfVersion].
+  static const Map<int, ({int n, int r, int p})> _kdfParameters = {
+    1: (n: 32768, r: 8, p: 1),
+    2: (n: 131072, r: 8, p: 1),
+  };
+
+  /// What new vaults are written with.
+  static const int currentKdfVersion = 1;
+
+  /// What a missing `kdf_version` means. Vaults written before the column
+  /// existed were all built with version 1, so that is what NULL decodes to.
+  /// This must never change.
+  static const int legacyKdfVersion = 1;
 
   static const String _verifierPlaintext = 'vault-key-verifier-v1';
 
@@ -38,7 +59,19 @@ class VaultCrypto {
   /// Derives the vault key from the master password. Intentionally slow
   /// (~200ms), which is the point — it is what makes the file expensive to
   /// brute force offline.
-  static Uint8List deriveKey(String masterPassword, Uint8List salt) {
+  static Uint8List deriveKey(
+    String masterPassword,
+    Uint8List salt, [
+    int version = currentKdfVersion,
+  ]) {
+    final parameters = _kdfParameters[version];
+    if (parameters == null) {
+      throw ValidationError(
+        'This vault was written with key derivation version $version, which '
+        'this build does not know about. Use a newer version of the app.',
+      );
+    }
+
     // NFKC first, to match Node's `masterPassword.normalize('NFKC')`. This is
     // not cosmetic: macOS hands apps decomposed accents through several input
     // paths, so "contraseña" can arrive as n + U+0303 here and as a single
@@ -48,7 +81,13 @@ class VaultCrypto {
     final password = Uint8List.fromList(utf8.encode(nfkc(masterPassword)));
 
     final derivator = Scrypt()
-      ..init(ScryptParameters(_scryptN, _scryptR, _scryptP, keyBytes, salt));
+      ..init(ScryptParameters(
+        parameters.n,
+        parameters.r,
+        parameters.p,
+        keyBytes,
+        salt,
+      ));
 
     return derivator.process(password);
   }

@@ -114,7 +114,10 @@ verbatim and Next reads it as a directory argument.
 ## How the encryption works
 
 - The master password is **never stored**. A 32-byte key is derived from it with
-  scrypt (N=2^15) over a random per-vault salt.
+  scrypt (N=2^15) over a random per-vault salt. The vault records which set of
+  scrypt parameters built its key, so the cost can be raised later without
+  stranding vaults that already exist — a vault written before that column
+  existed reads as version 1, which is what it was.
 - Every field of every entry — app, URL, user, password, note, favorite, color — is
   encrypted with AES-256-GCM before it reaches the disk. The database file contains
   no plaintext. Sorting and filtering therefore happen in memory after decrypting,

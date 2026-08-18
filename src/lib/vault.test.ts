@@ -27,7 +27,13 @@ import {
   restoreVault,
   assertRestorable,
 } from "./vault.ts";
-import { encrypt as encryptWith } from "./crypto.ts";
+import {
+  CURRENT_KDF_VERSION,
+  createSalt,
+  createVerifier,
+  deriveKey,
+  encrypt as encryptWith,
+} from "./crypto.ts";
 import type { EntryInput } from "./entry.ts";
 
 const MASTER = "a-strong-master-password";
@@ -804,5 +810,157 @@ describe("backupVault", () => {
     test("accepts a real backup", () => {
       assert.doesNotThrow(() => assertRestorable(snapshot));
     });
+  });
+});
+
+describe("kdf versioning", () => {
+  function fileBackedVault(dir: string): { db: DatabaseSync; path: string } {
+    const target = path.join(dir, "vault.db");
+    const db = new DatabaseSync(target);
+    migrate(db);
+    return { db, path: target };
+  }
+
+  const workspace = mkdtempSync(path.join(tmpdir(), "vault-kdf-"));
+  after(() => rmSync(workspace, { recursive: true, force: true }));
+
+  test("adds the column to a vault created before it existed", () => {
+    const db = new DatabaseSync(":memory:");
+    db.exec(`
+      CREATE TABLE vault_meta (
+        id INTEGER PRIMARY KEY CHECK (id = 1), salt TEXT NOT NULL, verifier TEXT NOT NULL
+      );
+    `);
+
+    migrate(db);
+
+    const columns = (db.prepare("PRAGMA table_info(vault_meta)").all() as unknown as {
+      name: string;
+    }[]).map((c) => c.name);
+
+    assert.ok(columns.includes("kdf_version"));
+  });
+
+  test("stamps a new vault with the current version", () => {
+    const db = freshDatabase();
+    initializeVault(db, MASTER);
+
+    const stored = db.prepare("SELECT kdf_version FROM vault_meta").get() as {
+      kdf_version: number;
+    };
+
+    assert.equal(stored.kdf_version, CURRENT_KDF_VERSION);
+  });
+
+  /**
+   * The reason the column exists. A vault written before it must keep opening,
+   * and it can only do that if NULL is read as the parameters it was built
+   * with rather than whatever is current.
+   */
+  test("opens a vault whose version is NULL using version 1", () => {
+    const db = freshDatabase();
+    initializeVault(db, MASTER);
+    db.exec("UPDATE vault_meta SET kdf_version = NULL");
+
+    assert.ok(unlock(db, MASTER));
+  });
+
+  test("derives with the version the vault records, not the current one", () => {
+    const db = freshDatabase();
+    const salt = createSalt();
+
+    // A vault built at version 2 while the build still writes version 1.
+    const keyV2 = deriveKey(MASTER, salt, 2);
+    db.prepare(
+      "INSERT INTO vault_meta (id, salt, verifier, kdf_version) VALUES (1, ?, ?, 2)",
+    ).run(salt.toString("base64"), createVerifier(keyV2));
+
+    const opened = unlock(db, MASTER);
+
+    assert.ok(opened, "a version 2 vault should open");
+    assert.equal(opened.toString("hex"), keyV2.toString("hex"));
+    assert.notEqual(
+      opened.toString("hex"),
+      deriveKey(MASTER, salt, 1).toString("hex"),
+      "and must not be the version 1 key",
+    );
+  });
+
+  test("says so plainly when the version is one this build cannot handle", () => {
+    const db = freshDatabase();
+    initializeVault(db, MASTER);
+    db.exec("UPDATE vault_meta SET kdf_version = 99");
+
+    assert.throws(() => unlock(db, MASTER), /version 99/);
+  });
+
+  /** Re-encrypting under a new key is what an upgrade needs, so it doubles as one. */
+  test("changing the master password re-stamps the current version", () => {
+    const db = freshDatabase();
+    initializeVault(db, MASTER);
+    db.exec("UPDATE vault_meta SET kdf_version = NULL");
+
+    changeMasterPassword(db, unlock(db, MASTER)!, "a-brand-new-master");
+
+    const stored = db.prepare("SELECT kdf_version FROM vault_meta").get() as {
+      kdf_version: number;
+    };
+    assert.equal(stored.kdf_version, CURRENT_KDF_VERSION);
+    assert.ok(unlock(db, "a-brand-new-master"));
+  });
+
+  test("carries the version across a restore", () => {
+    const { db } = fileBackedVault(mkdtempSync(path.join(workspace, "carry-")));
+    initializeVault(db, MASTER);
+    db.exec("UPDATE vault_meta SET kdf_version = 2");
+    // Re-stamp the verifier so the vault is genuinely a version 2 vault.
+    const salt = createSalt();
+    db.prepare("UPDATE vault_meta SET salt = ?, verifier = ?").run(
+      salt.toString("base64"),
+      createVerifier(deriveKey(MASTER, salt, 2)),
+    );
+
+    const snapshot = path.join(workspace, `carried-${Date.now()}.db`);
+    backupVault(db, snapshot);
+    restoreVault(db, snapshot);
+
+    const stored = db.prepare("SELECT kdf_version FROM vault_meta").get() as {
+      kdf_version: number;
+    };
+    assert.equal(stored.kdf_version, 2, "a restore must not reset the version");
+    assert.ok(unlock(db, MASTER), "and the vault must still open");
+    db.close();
+  });
+
+  test("restores a backup taken before the column existed", () => {
+    const directory = mkdtempSync(path.join(workspace, "legacy-"));
+    const { db } = fileBackedVault(directory);
+    initializeVault(db, MASTER);
+    createEntry(db, unlock(db, MASTER)!, input({ app: "Older than the column" }));
+
+    // A backup whose vault_meta predates kdf_version entirely.
+    const legacyPath = path.join(directory, "legacy-backup.db");
+    const legacy = new DatabaseSync(legacyPath);
+    legacy.exec(`
+      CREATE TABLE vault_meta (
+        id INTEGER PRIMARY KEY CHECK (id = 1), salt TEXT NOT NULL, verifier TEXT NOT NULL
+      );
+      CREATE TABLE entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, app TEXT NOT NULL, username TEXT NOT NULL,
+        password TEXT NOT NULL, comment TEXT NOT NULL,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+    `);
+    const meta = db
+      .prepare("SELECT salt, verifier FROM vault_meta WHERE id = 1")
+      .get() as { salt: string; verifier: string };
+    legacy
+      .prepare("INSERT INTO vault_meta (id, salt, verifier) VALUES (1, ?, ?)")
+      .run(meta.salt, meta.verifier);
+    legacy.close();
+
+    assert.doesNotThrow(() => restoreVault(db, legacyPath));
+    assert.ok(unlock(db, MASTER), "a pre-column backup must still unlock");
+    db.close();
   });
 });

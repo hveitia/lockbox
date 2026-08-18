@@ -3,6 +3,8 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import {
+  CURRENT_KDF_VERSION,
+  LEGACY_KDF_VERSION,
   createSalt,
   createVerifier,
   decrypt,
@@ -59,6 +61,10 @@ export function migrate(db: DatabaseSync): void {
     );
   `);
 
+  // Records which row of the scrypt parameter table built this vault's key.
+  // NULL means "written before this column existed", which is version 1.
+  addColumnIfMissing(db, "vault_meta", "kdf_version", "INTEGER");
+
   addColumnIfMissing(db, "entries", "url", "TEXT");
   addColumnIfMissing(db, "entries", "favorite", "TEXT");
   addColumnIfMissing(db, "entries", "color", "TEXT");
@@ -84,10 +90,22 @@ function addColumnIfMissing(
   db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
-function readMeta(db: DatabaseSync): { salt: string; verifier: string } | null {
-  const row = db.prepare("SELECT salt, verifier FROM vault_meta WHERE id = 1").get();
+type VaultMeta = { salt: string; verifier: string; kdfVersion: number };
 
-  return (row as { salt: string; verifier: string } | undefined) ?? null;
+function readMeta(db: DatabaseSync): VaultMeta | null {
+  const row = db
+    .prepare("SELECT salt, verifier, kdf_version FROM vault_meta WHERE id = 1")
+    .get() as
+    | { salt: string; verifier: string; kdf_version: number | null }
+    | undefined;
+
+  if (!row) return null;
+
+  return {
+    salt: row.salt,
+    verifier: row.verifier,
+    kdfVersion: row.kdf_version ?? LEGACY_KDF_VERSION,
+  };
 }
 
 export function isInitialized(db: DatabaseSync): boolean {
@@ -112,10 +130,9 @@ export function initializeVault(db: DatabaseSync, masterPassword: string): void 
   const salt = createSalt();
   const key = deriveKey(masterPassword, salt);
 
-  db.prepare("INSERT INTO vault_meta (id, salt, verifier) VALUES (1, ?, ?)").run(
-    salt.toString("base64"),
-    createVerifier(key),
-  );
+  db.prepare(
+    "INSERT INTO vault_meta (id, salt, verifier, kdf_version) VALUES (1, ?, ?, ?)",
+  ).run(salt.toString("base64"), createVerifier(key), CURRENT_KDF_VERSION);
 }
 
 /** Returns the vault key, or null when the vault is locked shut against this password. */
@@ -123,7 +140,13 @@ export function unlock(db: DatabaseSync, masterPassword: string): Buffer | null 
   const meta = readMeta(db);
   if (!meta) return null;
 
-  const key = deriveKey(masterPassword, Buffer.from(meta.salt, "base64"));
+  // The version the vault recorded, never the current one: an old vault must
+  // keep opening after the parameters move on.
+  const key = deriveKey(
+    masterPassword,
+    Buffer.from(meta.salt, "base64"),
+    meta.kdfVersion,
+  );
 
   return verifyKey(key, meta.verifier) ? key : null;
 }
@@ -374,9 +397,18 @@ export function restoreVault(db: DatabaseSync, backupPath: string): void {
     try {
       db.exec("DELETE FROM entries");
       db.exec("DELETE FROM vault_meta");
+      // Carried across like any other column. A backup taken before
+      // kdf_version existed simply does not have it, and the NULL that leaves
+      // behind decodes to version 1 — which is what such a backup was built
+      // with. Losing this would make a restored vault unopenable.
+      const inBackupMeta = columnsOf(db, "vault_meta", "restore_source");
+      const metaColumns = columnsOf(db, "vault_meta")
+        .filter((c) => inBackupMeta.includes(c))
+        .join(", ");
+
       db.exec(
-        `INSERT INTO vault_meta (id, salt, verifier)
-         SELECT id, salt, verifier FROM restore_source.vault_meta`,
+        `INSERT INTO vault_meta (${metaColumns})
+         SELECT ${metaColumns} FROM restore_source.vault_meta`,
       );
       db.exec(
         `INSERT INTO entries (${columnList})
@@ -434,10 +466,12 @@ export function changeMasterPassword(
 
   db.exec("BEGIN");
   try {
-    db.prepare("UPDATE vault_meta SET salt = ?, verifier = ? WHERE id = 1").run(
-      salt.toString("base64"),
-      createVerifier(newKey),
-    );
+    // Re-stamped with the current version, not the one the vault had. This is
+    // also the upgrade path: re-encrypting under a new key is exactly what
+    // moving to stronger parameters requires, so it comes for free here.
+    db.prepare(
+      "UPDATE vault_meta SET salt = ?, verifier = ?, kdf_version = ? WHERE id = 1",
+    ).run(salt.toString("base64"), createVerifier(newKey), CURRENT_KDF_VERSION);
 
     const update = db.prepare(
       `UPDATE entries

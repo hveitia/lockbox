@@ -77,11 +77,9 @@ than left for someone to discover.
 - **scrypt runs at N=2^15**, below the N=2^17 that OWASP currently gives as a
   minimum. It slows an offline attack on a stolen vault file by less than it
   should. A strong master password matters more than this parameter, but the
-  parameter should still move.
-- **The key derivation parameters are not recorded in the vault.** They live in
-  the source, so raising them would leave existing vaults unopenable with no way
-  to tell an old vault from a wrong password. A version column has to land
-  before the parameters change.
+  parameter should still move. The blocker for moving it is gone — the vault now
+  records which parameter set built its key, so raising the cost no longer
+  strands vaults that already exist — but the raise itself has not happened yet.
 - **The minimum master password is 8 characters**, which is short for the one
   secret everything else depends on. Use a passphrase.
 - **The macOS app runs without the App Sandbox**, so that it can open a vault
