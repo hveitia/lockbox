@@ -1,5 +1,7 @@
 # LockBox
 
+**English** · [Español](README.es.md)
+
 A local-only credential store for your own projects. Each entry holds an **app**, a
 **URL**, a **user**, a **password**, and a free-text **note**, and can optionally be
 marked a **favorite** and given a **color**.
