@@ -3,11 +3,20 @@
 <plist version="1.0">
 <dict>
 	<!--
-	  The App Sandbox is deliberately off. This app opens a vault file the user
-	  points it at, anywhere on disk, and must reopen the same path on every
-	  launch. Under the sandbox that needs security-scoped bookmarks in native
-	  Swift, for no benefit here: this is a local tool that is not distributed.
-	  Turn it back on only if this ever ships through the App Store.
+	  The App Sandbox is deliberately off.
+
+	  This app opens a vault file the user points it at, anywhere on disk, and
+	  must reopen that same path on every launch. Under the sandbox that needs
+	  security-scoped bookmarks in native Swift — real complexity for no gain
+	  here, since the file the user chose is the whole point.
+
+	  What the sandbox would otherwise buy is containment if this app were
+	  compromised. That trade is the user's to make, and they make it knowingly:
+	  the project ships as source, so whoever runs this compiled it themselves
+	  from these entitlements. No signed binary is distributed.
+
+	  Turn it back on before that changes — before shipping a build anyone else
+	  runs, and certainly before the App Store, which requires it.
 	-->
 </dict>
 </plist>
