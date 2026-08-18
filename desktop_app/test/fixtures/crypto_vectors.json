@@ -3,57 +3,69 @@
   "scrypt": {
     "password": "a-strong-master-password",
     "saltHex": "0123456789abcdef0123456789abcdef",
-    "n": 32768,
-    "r": 8,
-    "p": 1,
+    "kdfVersion": 2,
     "keyLength": 32,
-    "expectedKeyHex": "85cc143b1898b217255eae0c348f80de0d6518eee0758c9d556976173c4b489f"
+    "expectedKeyHex": "26a566576c819d31630b27f2c75e9a0ef435a3f39ef29a04716dc90eb50d4e9d"
   },
   "scryptSecondary": {
     "password": "another master password",
-    "saltHex": "573a5df1e9478d2f24986545d0cd8efc",
-    "expectedKeyHex": "6302a70a560d3e4d9e5c9442aa00c1c1dafc34246d9bf7b98b58782db6ef00fb"
+    "saltHex": "b7b684728b20b91c6114ce495dc1304b",
+    "expectedKeyHex": "8223b0ba0e6550ddf231253bbf27539a1c75ddbfe0215585c772c4671edef270"
   },
   "verifier": {
-    "payloadBase64": "GKQr2xUKvd2fXAU0D90xGEqp7tVHCP4k73pfMlvBZMmbrJaEX9bKJLiDYm0ongu8yA==",
-    "wrongKeyHex": "6481a13e8e670a5845cace98f8929fcda419bd92e75cd0b9c872cad0cb16e464"
+    "payloadBase64": "ALmvGspxx2YM8a2DV5hSOF6uCoWzcWyrzdpAjzN8LOM3WSGsSXfvVhJGy9r1YiLA+w==",
+    "wrongKeyHex": "e50fe7ae79b1379ba17e548f27a139c96bab5ff8d9603414237304d27d079fda"
   },
+  "kdfVersions": [
+    {
+      "version": 1,
+      "password": "a-strong-master-password",
+      "saltHex": "0123456789abcdef0123456789abcdef",
+      "expectedKeyHex": "85cc143b1898b217255eae0c348f80de0d6518eee0758c9d556976173c4b489f"
+    },
+    {
+      "version": 2,
+      "password": "a-strong-master-password",
+      "saltHex": "0123456789abcdef0123456789abcdef",
+      "expectedKeyHex": "26a566576c819d31630b27f2c75e9a0ef435a3f39ef29a04716dc90eb50d4e9d"
+    }
+  ],
   "vectors": [
     {
       "plaintext": "",
-      "payloadBase64": "347eQFUR/lShF4ygFetDP/PT8ood/fr1XSFAKA=="
+      "payloadBase64": "ZxTMjFArntbJV+A26ZQ54QDqJGp44xGgeziTMw=="
     },
     {
       "plaintext": "s3cret",
-      "payloadBase64": "sBxdUUI3Iz/OwIDs9A7a9lRGiLnC33raOtLx/3p8XJ8GYQ=="
+      "payloadBase64": "DhIEbWSwtkftwYbUxPqJ6yHaW1gFr4ofqDy/iOAI9q3iJg=="
     },
     {
       "plaintext": "admin@example.dev",
-      "payloadBase64": "GUECTGwojNatrJbQhQrHrqQjnLFjf+q9q0Qcmj9lL71rhgeGeNHxKB20PSly"
+      "payloadBase64": "BNHVq5OOGlEQWnhxAnDJsTmIUe6cR3N2jn+BdFVgke5img7iP7wAjD+uVlzZ"
     },
     {
       "plaintext": "https://acme.dev/admin",
-      "payloadBase64": "Ww4tqefeuhxeLn3KDsO4MVKYb8YwSfeqy2KbdOrc1VCl3Jj4nxSUhsKCvLK+s2YrCYc="
+      "payloadBase64": "5Y+jSRSfBIl609jP2Bxp7XaVcD0DjY+nVUgZHoUkjNC3fm+9LptfntB37BS87IBbNMY="
     },
     {
       "plaintext": "línea uno\nlínea dos — ñ ü 🔐",
-      "payloadBase64": "aVO5wcHl5ArXu+febkWZ1oFLzRXx2VhOiZQyhVCiYhx66a+VDHZDbZ8wM3IN1q7fZiDEgC3zXjP0Kt7o7wgJvA=="
+      "payloadBase64": "znhthnPmJqLSjqX/e4DDtdKGIWxYNO2SiGzaxLPKqi9LfCfxxgJQMaTaTeKQWaIWsDFoumCXPy3Ysi7VMCISVA=="
     },
     {
       "plaintext": "  leading and trailing spaces  ",
-      "payloadBase64": "sKGMvvpPrKf01LBfFUnCufreeZ2tUfnMFRc08aWRKH1I9Xmvx4AeVqoKlhuwkzoNnri4NQWamoIk5Zo="
+      "payloadBase64": "NVKD/1P4mkrag1T9NRWp57Xxo6ycFrHOovYfOhDWxRMqNODyr1Ac8LXlCLEH1KDVf95qEnVn6pRanJw="
     },
     {
       "plaintext": "true",
-      "payloadBase64": "/6OcaSVV4YvTQXefs6sw5TQDQG12WqP4AEfr78Em+co="
+      "payloadBase64": "hQF9MYJjz2GP29CWF78Upi1+R9M2cOzZtvDvFbeGpIE="
     },
     {
       "plaintext": "default",
-      "payloadBase64": "35yZWWG/EYueWnFIe8qsA1AzN3tK8H0kWe4F11OVsCBWyO0="
+      "payloadBase64": "s9prD4FE5IHjq11gF94glZCTTTGpxPFNSHoLMa2/OJGPd1Y="
     },
     {
       "plaintext": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-      "payloadBase64": "RT1oIep1GGBLS39KhymC2Qpy6WFS8k2OlI0MX9v8wpQ0VJGINil5nwp80gK+hNQyQT7Bpiz6ajAm7Vz4OxN7fnyCQzbcMFrJkHfGfRb7txsfWA7hbSitfvmTR3Dvl3bW0EvZALdmcf+SRHLYXHmHguN1SS9z/Wjrn6aMoDEzRjgVVz+t83F7wnaeFgILBnHcOWTlOo2FK0WDb0yjaa8aY8m1EMPFQ6VkPIRgbLyQ/LlMzoLQNduIdyuAdX/4AqJunYCvwIoSa5MRtrn2drhJ3b16TaUGxsSFEflXHBR6v3xDccmStIEyTR1KVdMKqiU36ZQRGP2tM1i8iinFwOs3yF1y0hQZFeCKLlt7SyK5dZ6PqITPJHIQyoBHFA7lvHW1nbIh520t5acn/wzIXRPP5MApl8lvHIytHrxLC3MAPIEzMyUzf7qihep4XTFQ3gdGNQgHe2SPxtKzLi3MrlyiSO88kTrOjp6YkpJkwdMFuXvnDbRPl64EVTQN8yVk+mv1VSNT3+qNh0dAPjyCnfu5byjC9EWkY/iJfQ6q0WsMx0ZGqzxfzpC4pRG8BJOJHiOl0BwxdCZ6RowWkVLuJLLSbxv79cW0V/CRpeVhargoT7LKQcEAoQi1dqLP6PnDzMy5kUi2bpcUKYI5Dn5cjAENjJhN4Zt9t5sX1rXCGYCO0IO/fyddXE3bCT2sQQTntQNp"
+      "payloadBase64": "GNEV+cPfYnWfCqy8ZFsbTevGRVCbdcTlKtlp6EEeMIpSxVn8oTefHsg/+CpJ80WP0mfMv3ktCEXtyT/mGcXDIWzAXxTAW+eNLWFs5jxoWBvXrblZaZLl/jCGsaqJuoW+fZk+DD76ShIaCvVm7a1va9EkvtBRcQt9CCgp8BsZ3WNFvaYr9Zd72brbK+2RTzI7WEifUPDtX1Vb35AIp+cdOiJQXBPfmcFfdoHPXFJvpmRBSs11tfY41hU2oho9f8brhMNjlLWJ21dU/oOTIn2Pc4AOSdmU4Goa/ubLvAnxN11iQdD7w/1sy5rxejNlaZ6KslPsaamkwYq+BhnMVHYSBPrlG9BGl3NCPIDOTJw7TvIRxsc6V3cFkHkGxLdFF7mbettSxbwLlussXYZlpP/L0WpZhELzPbV1u5rWzEwCQQHpeskK+vZ/zr3v+iIsTeR2ULqI0kT4rZ2gQzJTfbjv5u1INLf4ideSuzfOEn9MvunKKFVgCQpn7POv3ieOXLr31H5c/V7MvFiB7GsMR9cuGEVsnBDyC7KGqez29uHucyxZyOQ/A7c2b6aS8gusqXjsOg7otUBD4t2JlVBPuX8BfvNpT5bjEYBvtCL5ak9zR1UqOnBOirt0lPF/wP50BdYrdzcTJy6igmD9E61iZZ+e9nhGIpKwn4gkx1YEGk0bbgrHip6jf0d9k0soOq9a1Ybg"
     }
   ],
   "normalization": [
@@ -74,7 +86,7 @@
         97
       ],
       "saltHex": "0123456789abcdef0123456789abcdef",
-      "expectedKeyHex": "115e14c90cf0652a8e79c60a2899cb00c6b4e54ea78e46cf87314c963ed60362"
+      "expectedKeyHex": "ea43ee72f15462ce5a420a6129721f83955715f9d1d4c79f1e70189ca8c46230"
     },
     {
       "label": "composed n-tilde",
@@ -92,7 +104,7 @@
         97
       ],
       "saltHex": "0123456789abcdef0123456789abcdef",
-      "expectedKeyHex": "115e14c90cf0652a8e79c60a2899cb00c6b4e54ea78e46cf87314c963ed60362"
+      "expectedKeyHex": "ea43ee72f15462ce5a420a6129721f83955715f9d1d4c79f1e70189ca8c46230"
     },
     {
       "label": "decomposed a-acute",
@@ -113,7 +125,7 @@
         101
       ],
       "saltHex": "0123456789abcdef0123456789abcdef",
-      "expectedKeyHex": "f7481beeb4a2c5f72567071243c3504900ba9147462ac8c90ade18dd8a180a64"
+      "expectedKeyHex": "e20c9c5faaa8c0091dc6beaf846cbf05061c29be9bd376094f6ca59797272e39"
     },
     {
       "label": "compatibility ligature",
@@ -131,7 +143,7 @@
         116
       ],
       "saltHex": "0123456789abcdef0123456789abcdef",
-      "expectedKeyHex": "36347f8bc9e9870369e64b3f69f72855d04b36c9d403c3ba8da6441030ddcb9a"
+      "expectedKeyHex": "1202ebfa2206c3748a2f52f120edfd9b9040f9027f36a599e35eb2eb180882f2"
     },
     {
       "label": "full-width latin",
@@ -144,7 +156,7 @@
         65364
       ],
       "saltHex": "0123456789abcdef0123456789abcdef",
-      "expectedKeyHex": "652a1a6ad227e76ec2a10ce0ed8d4d4bb04059dd167357d5d4d8c0645b4fee26"
+      "expectedKeyHex": "b8b6b82d0d961296507cf8ebcd6a7c4bf8e549e3289a423e9123924088af4ebd"
     },
     {
       "label": "plain ascii is unchanged",
@@ -163,7 +175,7 @@
         105
       ],
       "saltHex": "0123456789abcdef0123456789abcdef",
-      "expectedKeyHex": "b20401835a927c38378c8754de869c4860e9012f11621970c457057e0d37d5a7"
+      "expectedKeyHex": "54294273a6364a894bc9915e6e7980c42991acf7bd8ac2d69725d0e543e2eb8d"
     }
   ]
 }

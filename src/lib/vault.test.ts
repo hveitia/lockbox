@@ -708,9 +708,12 @@ describe("backupVault", () => {
       const meta = source
         .prepare("SELECT salt, verifier FROM vault_meta WHERE id = 1")
         .get() as { salt: string; verifier: string };
+      legacy.exec("ALTER TABLE vault_meta ADD COLUMN kdf_version INTEGER");
       legacy
-        .prepare("INSERT INTO vault_meta (id, salt, verifier) VALUES (1, ?, ?)")
-        .run(meta.salt, meta.verifier);
+        .prepare(
+          "INSERT INTO vault_meta (id, salt, verifier, kdf_version) VALUES (1, ?, ?, ?)",
+        )
+        .run(meta.salt, meta.verifier, CURRENT_KDF_VERSION);
       legacy
         .prepare(
           `INSERT INTO entries (app, username, password, comment, created_at, updated_at)
@@ -859,8 +862,14 @@ describe("kdf versioning", () => {
    */
   test("opens a vault whose version is NULL using version 1", () => {
     const db = freshDatabase();
-    initializeVault(db, MASTER);
-    db.exec("UPDATE vault_meta SET kdf_version = NULL");
+
+    // Genuinely built at version 1, the way everything written before the
+    // column was. Stamping NULL onto a current vault would describe a file
+    // that cannot exist: its verifier would not match the version claimed.
+    const salt = createSalt();
+    db.prepare(
+      "INSERT INTO vault_meta (id, salt, verifier, kdf_version) VALUES (1, ?, ?, NULL)",
+    ).run(salt.toString("base64"), createVerifier(deriveKey(MASTER, salt, 1)));
 
     assert.ok(unlock(db, MASTER));
   });
@@ -897,8 +906,10 @@ describe("kdf versioning", () => {
   /** Re-encrypting under a new key is what an upgrade needs, so it doubles as one. */
   test("changing the master password re-stamps the current version", () => {
     const db = freshDatabase();
-    initializeVault(db, MASTER);
-    db.exec("UPDATE vault_meta SET kdf_version = NULL");
+    const salt = createSalt();
+    db.prepare(
+      "INSERT INTO vault_meta (id, salt, verifier, kdf_version) VALUES (1, ?, ?, NULL)",
+    ).run(salt.toString("base64"), createVerifier(deriveKey(MASTER, salt, 1)));
 
     changeMasterPassword(db, unlock(db, MASTER)!, "a-brand-new-master");
 
@@ -907,6 +918,105 @@ describe("kdf versioning", () => {
     };
     assert.equal(stored.kdf_version, CURRENT_KDF_VERSION);
     assert.ok(unlock(db, "a-brand-new-master"));
+  });
+
+  describe("upgrading on unlock", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "vault-upgrade-"));
+    after(() => rmSync(dir, { recursive: true, force: true }));
+
+    let vaultPath: string;
+    let seq = 0;
+
+    /** A vault stamped at version 1, as everything written before the raise is. */
+    function legacyVault(): DatabaseSync {
+      vaultPath = path.join(dir, `legacy-${seq++}.db`);
+      const db = new DatabaseSync(vaultPath);
+      migrate(db);
+
+      const salt = createSalt();
+      const key = deriveKey(MASTER, salt, 1);
+      db.prepare(
+        "INSERT INTO vault_meta (id, salt, verifier, kdf_version) VALUES (1, ?, ?, 1)",
+      ).run(salt.toString("base64"), createVerifier(key));
+      createEntry(db, key, input({ app: "Written under version 1" }));
+
+      return db;
+    }
+
+    test("moves a version 1 vault to the current version", () => {
+      const db = legacyVault();
+
+      assert.ok(unlock(db, MASTER));
+
+      const stored = db.prepare("SELECT kdf_version FROM vault_meta").get() as {
+        kdf_version: number;
+      };
+      assert.equal(stored.kdf_version, CURRENT_KDF_VERSION);
+      db.close();
+    });
+
+    test("keeps the same master password working afterwards", () => {
+      const db = legacyVault();
+      unlock(db, MASTER);
+
+      assert.ok(unlock(db, MASTER), "the password must not change");
+      assert.equal(unlock(db, "something else"), null);
+      db.close();
+    });
+
+    test("keeps every entry readable through the upgrade", () => {
+      const db = legacyVault();
+
+      const key = unlock(db, MASTER)!;
+
+      assert.deepEqual(
+        listEntries(db, key).map((e) => e.app),
+        ["Written under version 1"],
+      );
+      db.close();
+    });
+
+    test("returns a key that actually decrypts, not the pre-upgrade one", () => {
+      const db = legacyVault();
+      const key = unlock(db, MASTER)!;
+
+      // Would throw if the returned key were the old one.
+      assert.doesNotThrow(() => listEntries(db, key));
+      db.close();
+    });
+
+    test("leaves a vault already at the current version untouched", () => {
+      const db = freshDatabase();
+      initializeVault(db, MASTER);
+      const before = db.prepare("SELECT salt FROM vault_meta").get() as {
+        salt: string;
+      };
+
+      unlock(db, MASTER);
+
+      const after = db.prepare("SELECT salt FROM vault_meta").get() as {
+        salt: string;
+      };
+      assert.equal(after.salt, before.salt, "no pointless re-encryption");
+    });
+
+    /**
+     * The upgrade is an improvement, not a precondition. Someone whose vault
+     * cannot be written — read-only media, a locked file — must still get in.
+     */
+    test("still unlocks when the upgrade cannot be written", () => {
+      legacyVault().close();
+
+      const readOnly = new DatabaseSync(vaultPath, { readOnly: true });
+
+      const key = unlock(readOnly, MASTER);
+      assert.ok(key, "a read-only vault must still open");
+      assert.deepEqual(
+        listEntries(readOnly, key).map((e) => e.app),
+        ["Written under version 1"],
+      );
+      readOnly.close();
+    });
   });
 
   test("carries the version across a restore", () => {
@@ -951,12 +1061,16 @@ describe("kdf versioning", () => {
         created_at TEXT NOT NULL, updated_at TEXT NOT NULL
       );
     `);
-    const meta = db
-      .prepare("SELECT salt, verifier FROM vault_meta WHERE id = 1")
-      .get() as { salt: string; verifier: string };
+    // A backup with no kdf_version column genuinely predates versioning, so it
+    // genuinely holds a version 1 key. Building it any other way describes a
+    // file that could never have existed.
+    const legacySalt = createSalt();
     legacy
       .prepare("INSERT INTO vault_meta (id, salt, verifier) VALUES (1, ?, ?)")
-      .run(meta.salt, meta.verifier);
+      .run(
+        legacySalt.toString("base64"),
+        createVerifier(deriveKey(MASTER, legacySalt, 1)),
+      );
     legacy.close();
 
     assert.doesNotThrow(() => restoreVault(db, legacyPath));

@@ -59,6 +59,29 @@ void main() {
       expect(bytesToHex(key), spec['expectedKeyHex']);
     });
 
+    /// Both clients must agree at every version in the table, not only at
+    /// whichever one is current. A version whose parameters drift on one side
+    /// would otherwise lock that side out of vaults the other wrote — silently,
+    /// and only for the people who had already created a vault.
+    for (final spec
+        in (fixtures['kdfVersions'] as List).cast<Map<String, dynamic>>()) {
+      test('matches Node at kdf version ${spec['version']}', () {
+        final key = VaultCrypto.deriveKey(
+          spec['password'] as String,
+          hexToBytes(spec['saltHex'] as String),
+          spec['version'] as int,
+        );
+
+        expect(bytesToHex(key), spec['expectedKeyHex']);
+      });
+    }
+
+    test('defaults to the version new vaults are written with', () {
+      final spec = fixtures['scrypt'] as Map<String, dynamic>;
+
+      expect(spec['kdfVersion'], VaultCrypto.currentKdfVersion);
+    });
+
     test('returns 32 bytes', () {
       expect(VaultCrypto.deriveKey('whatever', Uint8List(16)).length, 32);
     });

@@ -700,9 +700,20 @@ void main() {
     /// The reason the column exists: a vault written before it must keep
     /// opening, which needs NULL read as the parameters it was built with.
     test('opens a vault whose version is NULL using version 1', () {
-      repo.initialize(master);
+      // Genuinely built at version 1, the way everything written before the
+      // column was. Stamping NULL onto a current vault would describe a file
+      // that cannot exist: its verifier would not match the version claimed.
       final db = sqlite3.open('${workspace.path}/vault.db');
-      db.execute('UPDATE vault_meta SET kdf_version = NULL');
+      VaultRepository.migrate(db);
+      final salt = VaultCrypto.createSalt();
+      db.execute(
+        'INSERT INTO vault_meta (id, salt, verifier, kdf_version) '
+        'VALUES (1, ?, ?, NULL)',
+        [
+          base64.encode(salt),
+          VaultCrypto.createVerifier(VaultCrypto.deriveKey(master, salt, 1)),
+        ],
+      );
       db.close();
 
       final reopened = VaultRepository.open('${workspace.path}/vault.db');
@@ -751,9 +762,17 @@ void main() {
     });
 
     test('changing the master password re-stamps the current version', () {
-      repo.initialize(master);
       final db = sqlite3.open('${workspace.path}/vault.db');
-      db.execute('UPDATE vault_meta SET kdf_version = NULL');
+      VaultRepository.migrate(db);
+      final salt = VaultCrypto.createSalt();
+      db.execute(
+        'INSERT INTO vault_meta (id, salt, verifier, kdf_version) '
+        'VALUES (1, ?, ?, NULL)',
+        [
+          base64.encode(salt),
+          VaultCrypto.createVerifier(VaultCrypto.deriveKey(master, salt, 1)),
+        ],
+      );
       db.close();
 
       final reopened = VaultRepository.open('${workspace.path}/vault.db');
@@ -781,6 +800,66 @@ void main() {
       expect(repo.unlock(master), isNotNull);
     });
 
+    group('upgrading on unlock', () {
+      /// A vault stamped at version 1, as everything before the raise is.
+      VaultRepository legacyVault(String at) {
+        final db = sqlite3.open(at);
+        VaultRepository.migrate(db);
+        final salt = VaultCrypto.createSalt();
+        db.execute(
+          'INSERT INTO vault_meta (id, salt, verifier, kdf_version) '
+          'VALUES (1, ?, ?, 1)',
+          [
+            base64.encode(salt),
+            VaultCrypto.createVerifier(VaultCrypto.deriveKey(master, salt, 1)),
+          ],
+        );
+        db.close();
+
+        return VaultRepository.open(at);
+      }
+
+      test('moves a version 1 vault to the current version', () {
+        final at = '${workspace.path}/legacy.db';
+        final legacy = legacyVault(at);
+        addTearDown(legacy.dispose);
+
+        expect(legacy.unlock(master), isNotNull);
+        expect(storedVersion(legacy, at), VaultCrypto.currentKdfVersion);
+      });
+
+      test('keeps the password and the entries through the upgrade', () {
+        final at = '${workspace.path}/legacy2.db';
+        final legacy = legacyVault(at);
+        addTearDown(legacy.dispose);
+        legacy.createEntry(legacy.unlock(master)!, entryInput(app: 'Survivor'));
+
+        final key = legacy.unlock(master);
+
+        expect(key, isNotNull, reason: 'the password must not change');
+        expect(legacy.listEntries(key!).map((e) => e.app).toList(), ['Survivor']);
+        expect(legacy.unlock('something else'), isNull);
+      });
+
+      test('leaves a vault already at the current version untouched', () {
+        repo.initialize(master);
+        final at = '${workspace.path}/vault.db';
+        final db = sqlite3.open(at);
+        final before = db.select('SELECT salt FROM vault_meta').first['salt'];
+        db.close();
+
+        repo.unlock(master);
+
+        final db2 = sqlite3.open(at);
+        expect(
+          db2.select('SELECT salt FROM vault_meta').first['salt'],
+          before,
+          reason: 'no pointless re-encryption',
+        );
+        db2.close();
+      });
+    });
+
     /// The two clients derive keys for the same vault, so their parameter
     /// tables must agree. src/lib/crypto.ts holds the other copy.
     test('the parameter table matches the one Node uses', () {
@@ -789,12 +868,14 @@ void main() {
       // Version 1 is what every existing vault and every interop fixture was
       // built with; if this ever changes, both apps stop reading them.
       expect(
-        VaultCrypto.deriveKey('a-strong-master-password', salt, 1),
+        VaultCrypto.deriveKey('a-strong-master-password', salt, 2),
         equals(VaultCrypto.deriveKey('a-strong-master-password', salt)),
-        reason: 'the default must still be version 1',
+        reason: 'the default must be the current version',
       );
-      expect(VaultCrypto.currentKdfVersion, 1);
+      // NULL must keep decoding to 1 forever: that is what every vault written
+      // before the column existed was built with.
       expect(VaultCrypto.legacyKdfVersion, 1);
+      expect(VaultCrypto.currentKdfVersion, 2);
     });
   });
 }

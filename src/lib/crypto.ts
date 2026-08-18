@@ -35,7 +35,7 @@ const KDF_PARAMETERS = {
 export type KdfVersion = keyof typeof KDF_PARAMETERS;
 
 /** What new vaults are written with. */
-export const CURRENT_KDF_VERSION: KdfVersion = 1;
+export const CURRENT_KDF_VERSION: KdfVersion = 2;
 
 /**
  * What a missing `kdf_version` means.

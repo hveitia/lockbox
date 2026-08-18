@@ -140,7 +140,24 @@ class VaultRepository {
       meta.kdfVersion,
     );
 
-    return VaultCrypto.verifyKey(key, meta.verifier) ? key : null;
+    if (!VaultCrypto.verifyKey(key, meta.verifier)) return null;
+    if (meta.kdfVersion >= VaultCrypto.currentKdfVersion) return key;
+
+    // Unlocking is the only moment the plaintext password is in hand, so it is
+    // the only place the key can be re-derived at stronger parameters. Without
+    // this a vault created before the raise stays on the old cost forever, and
+    // raising it buys its owner nothing.
+    //
+    // The length check is deliberately skipped: this password already opens the
+    // vault, and refusing it because a minimum has risen since would lock
+    // someone out of their own data.
+    try {
+      return _reEncryptUnder(key, masterPassword);
+    } catch (_) {
+      // A vault that cannot be rewritten — read-only media, a busy writer —
+      // must still open. The upgrade is an improvement, not a precondition.
+      return key;
+    }
   }
 
   /// Reads a column added after the fact; NULL means "written before it existed".
@@ -454,16 +471,17 @@ class VaultRepository {
 
   /// Re-encrypts every entry under a key derived from [newMasterPassword].
   /// Runs in a transaction so a failure leaves the old password working.
-  Uint8List changeMasterPassword(Uint8List currentKey, String newMasterPassword) {
-    if (newMasterPassword.length < minMasterPasswordLength) {
-      throw const ValidationError(
-        'Master password must be at least $minMasterPasswordLength characters',
-      );
-    }
-
+  /// Re-encrypts every entry under a key derived from [masterPassword], at the
+  /// current KDF version. Runs in a transaction so a failure leaves the vault
+  /// exactly as it was, still opening with the old key.
+  ///
+  /// Shared by changing the master password and by upgrading key derivation:
+  /// both are the same operation, and the second is the first with the password
+  /// left unchanged.
+  Uint8List _reEncryptUnder(Uint8List currentKey, String masterPassword) {
     final entries = listEntries(currentKey);
     final salt = VaultCrypto.createSalt();
-    final newKey = VaultCrypto.deriveKey(newMasterPassword, salt);
+    final newKey = VaultCrypto.deriveKey(masterPassword, salt);
 
     _db.execute('BEGIN');
     try {
@@ -497,5 +515,17 @@ class VaultRepository {
     }
 
     return newKey;
+  }
+
+  /// Re-encrypts every entry under a new master password.
+  /// Runs in a transaction so a failure leaves the old password working.
+  Uint8List changeMasterPassword(Uint8List currentKey, String newMasterPassword) {
+    if (newMasterPassword.length < minMasterPasswordLength) {
+      throw const ValidationError(
+        'Master password must be at least $minMasterPasswordLength characters',
+      );
+    }
+
+    return _reEncryptUnder(currentKey, newMasterPassword);
   }
 }

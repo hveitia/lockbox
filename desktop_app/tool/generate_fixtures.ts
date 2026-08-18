@@ -9,7 +9,16 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createSalt, createVerifier, deriveKey, encrypt } from "../../src/lib/crypto.ts";
+import {
+  CURRENT_KDF_VERSION,
+  createSalt,
+  createVerifier,
+  deriveKey,
+  encrypt,
+} from "../../src/lib/crypto.ts";
+
+/** Every version the parameter table defines. Keep in step with crypto.ts. */
+const KDF_VERSIONS = [1, 2] as const;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const outputDir = path.join(here, "..", "test", "fixtures");
@@ -55,9 +64,7 @@ const fixtures = {
   scrypt: {
     password: MASTER,
     saltHex: salt.toString("hex"),
-    n: 32768,
-    r: 8,
-    p: 1,
+    kdfVersion: CURRENT_KDF_VERSION,
     keyLength: 32,
     expectedKeyHex: key.toString("hex"),
   },
@@ -75,6 +82,18 @@ const fixtures = {
     payloadBase64: createVerifier(key),
     wrongKeyHex: deriveKey("not the master", salt).toString("hex"),
   },
+  /**
+   * One entry per row of the scrypt parameter table, so both clients are
+   * pinned at every version rather than only at whichever one is current.
+   * A version whose parameters drift on one side fails here instead of
+   * quietly locking that side out of vaults the other wrote.
+   */
+  kdfVersions: KDF_VERSIONS.map((version) => ({
+    version,
+    password: MASTER,
+    saltHex: salt.toString("hex"),
+    expectedKeyHex: deriveKey(MASTER, salt, version).toString("hex"),
+  })),
   vectors: plaintexts.map((plaintext) => ({
     plaintext,
     payloadBase64: encrypt(plaintext, key),

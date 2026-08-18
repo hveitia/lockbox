@@ -37,7 +37,7 @@ class VaultCrypto {
   };
 
   /// What new vaults are written with.
-  static const int currentKdfVersion = 1;
+  static const int currentKdfVersion = 2;
 
   /// What a missing `kdf_version` means. Vaults written before the column
   /// existed were all built with version 1, so that is what NULL decodes to.

@@ -148,7 +148,24 @@ export function unlock(db: DatabaseSync, masterPassword: string): Buffer | null 
     meta.kdfVersion,
   );
 
-  return verifyKey(key, meta.verifier) ? key : null;
+  if (!verifyKey(key, meta.verifier)) return null;
+  if (meta.kdfVersion >= CURRENT_KDF_VERSION) return key;
+
+  // Unlocking is the only moment the plaintext password is in hand, so it is
+  // the only place the key can be re-derived at stronger parameters. Otherwise
+  // a vault created before the raise would stay on the old cost forever, and
+  // raising it would have bought its owner nothing.
+  //
+  // The strength check is deliberately skipped: this password already opens the
+  // vault, and refusing it here because a minimum has risen since would lock
+  // someone out of their own data.
+  try {
+    return reEncryptUnder(db, key, masterPassword);
+  } catch {
+    // A vault that cannot be rewritten — read-only media, a busy writer — must
+    // still open. The upgrade is an improvement, not a precondition.
+    return key;
+  }
 }
 
 /** Reads a column added after the fact; NULL means "written before it existed". */
@@ -450,19 +467,22 @@ export function createBackup(
 }
 
 /**
- * Re-encrypts every entry under a key derived from `newMasterPassword`.
- * Runs in a transaction so a failure leaves the old password working.
+ * Re-encrypts every entry under a key derived from `masterPassword`, at the
+ * current KDF version. Runs in a transaction so a failure leaves the vault
+ * exactly as it was, still opening with the old key.
+ *
+ * Shared by changing the master password and by upgrading the key derivation:
+ * both are the same operation, and the second is only the first with the
+ * password left unchanged.
  */
-export function changeMasterPassword(
+function reEncryptUnder(
   db: DatabaseSync,
   currentKey: Buffer,
-  newMasterPassword: string,
+  masterPassword: string,
 ): Buffer {
-  assertMasterPasswordStrength(newMasterPassword);
-
   const entries = listEntries(db, currentKey);
   const salt = createSalt();
-  const newKey = deriveKey(newMasterPassword, salt);
+  const newKey = deriveKey(masterPassword, salt);
 
   db.exec("BEGIN");
   try {
@@ -500,4 +520,18 @@ export function changeMasterPassword(
   }
 
   return newKey;
+}
+
+/**
+ * Re-encrypts every entry under a new master password.
+ * Runs in a transaction so a failure leaves the old password working.
+ */
+export function changeMasterPassword(
+  db: DatabaseSync,
+  currentKey: Buffer,
+  newMasterPassword: string,
+): Buffer {
+  assertMasterPasswordStrength(newMasterPassword);
+
+  return reEncryptUnder(db, currentKey, newMasterPassword);
 }

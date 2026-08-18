@@ -37,8 +37,10 @@ in either codebase.
 
 Every field of every entry — app, URL, user, password, note, favourite, colour —
 is encrypted with AES-256-GCM under a key derived from your master password with
-scrypt (N=2^15, r=8, p=1) over a random per-vault salt. The master password is
-never stored. The derived key exists only in process memory and is gone when the
+scrypt (N=2^17, r=8, p=1 — OWASP's current floor) over a random per-vault salt.
+The vault records which parameter set built its key, and a vault created under
+weaker parameters is re-derived at the current ones the next time it is
+unlocked. The master password is never stored. The derived key exists only in process memory and is gone when the
 process exits.
 
 ## What it protects against
@@ -74,12 +76,6 @@ working-as-intended.
 Already known, so they do not need reporting. They are written down here rather
 than left for someone to discover.
 
-- **scrypt runs at N=2^15**, below the N=2^17 that OWASP currently gives as a
-  minimum. It slows an offline attack on a stolen vault file by less than it
-  should. A strong master password matters more than this parameter, but the
-  parameter should still move. The blocker for moving it is gone — the vault now
-  records which parameter set built its key, so raising the cost no longer
-  strands vaults that already exist — but the raise itself has not happened yet.
 - **The minimum master password is 8 characters**, which is short for the one
   secret everything else depends on. Use a passphrase.
 - **The macOS app runs without the App Sandbox**, so that it can open a vault
