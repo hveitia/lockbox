@@ -1,5 +1,7 @@
 # Security
 
+**English** · [Español](SECURITY.es.md)
+
 This is a password vault, so it is worth being precise about what it defends
 against and what it does not.
 
@@ -40,8 +42,8 @@ is encrypted with AES-256-GCM under a key derived from your master password with
 scrypt (N=2^17, r=8, p=1 — OWASP's current floor) over a random per-vault salt.
 The vault records which parameter set built its key, and a vault created under
 weaker parameters is re-derived at the current ones the next time it is
-unlocked. The master password is never stored. The derived key exists only in process memory and is gone when the
-process exits.
+unlocked. The master password is never stored. The derived key exists only in
+process memory and is gone when the process exits.
 
 ## What it protects against
 

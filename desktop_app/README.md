@@ -1,5 +1,7 @@
 # LockBox Desktop
 
+**English** · [Español](README.es.md)
+
 A native macOS front end for the same vault the web app uses. It opens
 `data/vault.db` in place — no copy, no sync, no server. An entry added here is
 there the next time the web app is started, and the other way around.
@@ -44,8 +46,10 @@ same setup flow the web app shows on a fresh install.
 Both apps read and write the same SQLite file with the same format, so the
 desktop app is not a viewer — it is a second full client:
 
-- **Key derivation**: scrypt (N=32768, r=8, p=1) over the NFKC-normalized
-  master password and the stored salt, 32-byte key. The normalization is
+- **Key derivation**: scrypt over the NFKC-normalized master password and the
+  stored salt, 32-byte key. The vault records which parameter set built its key —
+  new vaults use N=2^17, r=8, p=1, and one written under weaker parameters is
+  re-derived at the current ones the next time it is unlocked. The normalization is
   load-bearing — macOS can hand this app a decomposed `ñ` where the browser
   gives a composed one, and without it the same typed password derives a
   different key and unlocking fails.
@@ -131,8 +135,9 @@ unlock step ever starts to feel slow.
   not in a macOS fullscreen Space — the vault stays one Cmd+Tab away from
   whatever you were doing when you needed a password.
 - Key derivation runs on a background isolate, so the window never freezes
-  during the scrypt cost of unlocking (~180ms on this machine — measure yours
-  with `dart run tool/bench_scrypt.dart`).
+  during the scrypt cost of unlocking (~690ms at the current parameters on this
+  machine — measure yours with `dart run tool/bench_scrypt.dart`, which times
+  every version the vault can be written with).
 - The master password is held in memory only while the app is unlocked. Closing
   the app, or clicking **Lock**, drops it.
 - The app never talks to the network. There is nothing to configure and nothing
