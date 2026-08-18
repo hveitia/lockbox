@@ -1,4 +1,5 @@
 import 'package:file_selector/file_selector.dart';
+import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -114,7 +115,11 @@ class _VaultScreenState extends State<VaultScreen> {
   /// allowed to overwrite one.
   Future<void> _backup() async {
     final location = await getSaveLocation(
-      suggestedName: VaultRepository.suggestedBackupName(DateTime.now()),
+      // Without the extension: the panel appends the accepted one itself, and
+      // offering a name that already carries it produces vault-….db.db.
+      suggestedName: p.basenameWithoutExtension(
+        VaultRepository.suggestedBackupName(DateTime.now()),
+      ),
       acceptedTypeGroups: const [
         XTypeGroup(label: 'Vault database', extensions: ['db']),
       ],

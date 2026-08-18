@@ -521,6 +521,26 @@ void main() {
           'vault-2026-01-02T03-04-05-006.db',
         );
       });
+
+      /// The case the previous test cannot see. Dart keeps microseconds and
+      /// JavaScript does not, so any instant carrying them named the file with
+      /// six fractional digits where Node writes three — and an assertion
+      /// pinned to an instant whose microseconds are zero agrees either way.
+      test('drops the microseconds JavaScript cannot represent', () {
+        expect(
+          VaultRepository.suggestedBackupName(
+            DateTime.utc(2026, 8, 17, 18, 38, 12, 649, 492),
+          ),
+          'vault-2026-08-17T18-38-12-649.db',
+        );
+      });
+
+      test('never carries more than milliseconds, whatever the clock gives', () {
+        expect(
+          VaultRepository.suggestedBackupName(DateTime.now()),
+          matches(r'^vault-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}\.db$'),
+        );
+      });
     });
   });
 

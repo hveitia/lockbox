@@ -452,8 +452,17 @@ class VaultRepository {
   /// carries dashes only. Milliseconds stay in because [backupTo] refuses to
   /// overwrite.
   static String suggestedBackupName(DateTime now) {
-    final stamp = now
-        .toUtc()
+    // Dart's DateTime keeps microseconds and JavaScript's Date does not, so
+    // toIso8601String emits six fractional digits where Node's toISOString
+    // emits three. Both clients back up the same vault and must not disagree
+    // about what a backup is called, so the extra precision is dropped before
+    // the string is built rather than trimmed off it afterwards.
+    final toMilliseconds = DateTime.fromMillisecondsSinceEpoch(
+      now.millisecondsSinceEpoch,
+      isUtc: true,
+    );
+
+    final stamp = toMilliseconds
         .toIso8601String()
         .replaceAll(RegExp(r'[:.]'), '-')
         .replaceAll(RegExp(r'Z$'), '');
