@@ -1,0 +1,3 @@
+# Puts the Sponsor button in the repository header. GitHub renders it itself,
+# so nothing is loaded from another host and no image is hotlinked.
+buy_me_a_coffee: hveitia86a

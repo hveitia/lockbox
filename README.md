@@ -230,3 +230,9 @@ It comes with no warranty, and that is not boilerplate here: this is a tool you
 run yourself, on your own machine, holding your own secrets. Read the threat
 model above before you trust it with anything you cannot afford to lose, and
 keep a backup.
+
+## Support
+
+Free, and staying that way — there is nothing to unlock and nothing to upgrade
+to. If it replaces a subscription you were paying for, you can
+[buy me a coffee](https://buymeacoffee.com/hveitia86a).
