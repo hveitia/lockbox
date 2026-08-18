@@ -253,7 +253,7 @@ class _VaultScreenState extends State<VaultScreen> {
                     fontWeight: FontWeight.w500,
                   )),
               const SizedBox(height: 8),
-              Text('Vault',
+              Text('LockBox',
                   style: Theme.of(context)
                       .textTheme
                       .displaySmall

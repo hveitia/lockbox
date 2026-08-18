@@ -68,7 +68,7 @@ export function VaultScreen({
             Local only
           </p>
           <h1 className="mt-2 font-display text-4xl leading-none font-semibold">
-            Vault
+            LockBox
           </h1>
         </div>
 

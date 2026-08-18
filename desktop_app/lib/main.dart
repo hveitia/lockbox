@@ -36,7 +36,7 @@ class _VaultAppState extends State<VaultApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Vault',
+      title: 'LockBox',
       debugShowCheckedModeBanner: false,
       theme: VaultTheme.build(),
       home: AnimatedBuilder(

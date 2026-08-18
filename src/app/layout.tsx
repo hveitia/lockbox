@@ -21,7 +21,7 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Vault",
+  title: "LockBox",
   description: "Local credential store",
   robots: { index: false, follow: false },
 };

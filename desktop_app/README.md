@@ -1,4 +1,4 @@
-# Vault Desktop
+# LockBox Desktop
 
 A native macOS front end for the same vault the web app uses. It opens
 `data/vault.db` in place — no copy, no sync, no server. An entry added here is
@@ -21,7 +21,7 @@ For a standalone app bundle:
 
 ```bash
 flutter build macos --release
-open build/macos/Build/Products/Release/Vault.app
+open build/macos/Build/Products/Release/LockBox.app
 ```
 
 ## First launch
