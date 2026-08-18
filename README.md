@@ -2,6 +2,33 @@
 
 **English** · [Español](README.es.md)
 
+Building software got fast. What used to be a quarter of work is now a weekend, and
+every one of those weekends leaves behind something with an admin login: a
+dashboard, a CMS, a staging box, a database console. On top of them sit the accounts
+that made them possible — GCP, AWS, Azure, Vercel, Render, and whichever one
+launches next month.
+
+Each with its own login. Different length rules, different symbol rules, one that
+expired last month, one you rotated after an incident and never wrote down anywhere.
+You end up resetting the same password three times a year because working out which
+variant you used is slower than starting over. The list grows every time you ship
+something, and it never gets shorter.
+
+There is no shortage of tools for this and most of them are good. They also live on
+the internet. Your credentials sit on infrastructure you do not run, protected by
+someone else's engineering, someone else's breach history, and whatever their
+pricing looks like in three years. Even done properly — and the serious ones do it
+properly — the keys to everything you built are on a server you will never see.
+
+LockBox has no server. No account, nothing to sign in to, no sync, no telemetry. The
+vault is a single encrypted file on your own disk, and the only thing that opens it
+is a password that is never stored anywhere.
+
+Free, and built in the open — if it earns it,
+[buy me a coffee](https://buymeacoffee.com/hveitia86a).
+
+## What it stores
+
 A local-only credential store for your own projects. Each entry holds an **app**, a
 **URL**, a **user**, a **password**, and a free-text **note**, and can optionally be
 marked a **favorite** and given a **color**.

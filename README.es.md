@@ -2,6 +2,33 @@
 
 [English](README.md) · **Español**
 
+Construir software se volvió rápido. Lo que antes era un trimestre de trabajo hoy es
+un fin de semana, y cada uno de esos fines de semana deja atrás algo con un panel de
+administración: un dashboard, un CMS, un entorno de staging, una consola de base de
+datos. Y por encima están las cuentas que lo hicieron posible — GCP, AWS, Azure,
+Vercel, Render, y la que salga el mes que viene.
+
+Cada una con su propio acceso. Reglas distintas de longitud, reglas distintas de
+símbolos, una que venció el mes pasado, otra que rotaste después de un incidente y
+no anotaste en ningún lado. Terminás reseteando la misma contraseña tres veces al
+año porque deducir qué variante usaste tarda más que empezar de nuevo. La lista
+crece cada vez que publicás algo, y nunca se achica.
+
+Herramientas para esto sobran, y la mayoría son buenas. También viven en internet.
+Tus credenciales quedan en infraestructura que no administrás vos, protegidas por la
+ingeniería de otro, el historial de brechas de otro, y el precio que esa empresa
+decida cobrar dentro de tres años. Incluso hecho bien —y las serias lo hacen bien—
+las llaves de todo lo que construiste están en un servidor que nunca vas a ver.
+
+LockBox no tiene servidor. Sin cuenta, sin registro, sin sincronización, sin
+telemetría. El almacén es un único archivo cifrado en tu propio disco, y lo único
+que lo abre es una contraseña que no se guarda en ningún lado.
+
+Gratis y a la vista de todos — si te sirve,
+[invitame un café](https://buymeacoffee.com/hveitia86a).
+
+## Qué guarda
+
 Un almacén de credenciales local para tus propios proyectos. Cada entrada guarda
 una **aplicación**, una **URL**, un **usuario**, una **contraseña** y una **nota**
 de texto libre, y opcionalmente puede marcarse como **favorita** y recibir un
